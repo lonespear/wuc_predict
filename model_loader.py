@@ -3,7 +3,7 @@ import torch
 import json
 
 # Load your model and tokenizer (modify based on your model)
-MODEL_PATH = "jonday/wuc-model"  # Update this path
+MODEL_PATH = "jonday/wuc-model/fine_tuned_bert_model"  # Update this path
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
 
