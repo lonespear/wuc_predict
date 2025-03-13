@@ -97,9 +97,6 @@ if uploaded_file is not None:
         # Concatenate predictions to the original uploaded DataFrame
         df = pd.concat([df, prediction_df], axis=1)
 
-        # Add predictions to DataFrame
-        df['Predicted WUC'] = predictions
-
         # Complete progress
         progress_bar.empty()
         st.success("Predictions complete! ✅")
