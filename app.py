@@ -57,7 +57,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # User input
-discrepancy_text = st.text_area("Enter discrepancy description:", height=50)
+discrepancy_text = st.text_area("Enter discrepancy description:", height=150)
 
 # Predict button
 if st.button("Predict Work User Code ✈️"):
