@@ -83,11 +83,19 @@ if uploaded_file is not None:
         progress_bar = st.progress(0)
         total = len(corpus)
 
+        # Initialize list to store predictions
+        prediction_list = []
+        
         # Run predictions with progress update
-        predictions = []
         for idx, text in enumerate(corpus):
-            predictions.append(predict_discrepancy(text))
-            progress_bar.progress((idx + 1) / total)  # Update progress
+            prediction_list.append(predict_discrepancy(text, method=2))  # Store tuple/list of predictions
+            progress_bar.progress((idx + 1) / total)
+        
+        # Convert list to DataFrame
+        prediction_df = pd.DataFrame(prediction_list, columns=["Predicted WUC", "Definition", "System", "Confidence"])
+        
+        # Concatenate predictions to the original uploaded DataFrame
+        df = pd.concat([df, prediction_df], axis=1)
 
         # Add predictions to DataFrame
         df['Predicted WUC'] = predictions
