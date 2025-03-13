@@ -20,15 +20,20 @@ model.eval()
 
 def predict_discrepancy(text):
     """Predict the work user code based on input discrepancy text"""
+
+    if not isinstance(text, str) or not text.strip():
+        return "Invalid input"
+
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
     with torch.no_grad():
         outputs = model(**inputs)
-    probabilities = torch.nn.functional.softmax(outputs.logits, dim=1)  # Get probabilities
+    probabilities = torch.nn.functional.softmax(outputs.logits, dim=1)
     predicted_class = torch.argmax(outputs.logits, dim=1).item()
-    confidence = probabilities[0, predicted_class].item() * 100  # Convert to percentage
+    confidence = probabilities[0, predicted_class].item() * 100
 
-    # Example: Convert model output (index) back to WUC
+    # Convert model output (index) back to WUC
     wuc = index_to_wuc.get(predicted_class, "Unknown WUC")
     definition = wuc_defs.get(wuc, "Unknown Definition")
     system = main_system.get(wuc[:2], "Unknown Main System")
-    return f"{wuc}: {system}, {definition} (Confidence: {confidence:.2f}%)"  # Modify if you have class labels
+    
+    return f"{wuc}: {system}, {definition} (Confidence: {confidence:.2f}%)"
