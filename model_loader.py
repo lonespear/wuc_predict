@@ -18,7 +18,7 @@ index_to_wuc = {v: k for k, v in wuc_mapping.items()}
 # Ensure model is in evaluation mode
 model.eval()
 
-def predict_discrepancy(text):
+def predict_discrepancy(text, method = 1):
     """Predict the work user code based on input discrepancy text"""
 
     if not isinstance(text, str) or not text.strip():
@@ -35,5 +35,7 @@ def predict_discrepancy(text):
     wuc = index_to_wuc.get(predicted_class, "Unknown WUC")
     definition = wuc_defs.get(wuc, "Unknown Definition")
     system = main_system.get(wuc[:2], "Unknown Main System")
-    
-    return f"{wuc}: {system}, {definition} (Confidence: {confidence:.2f}%)"
+    if method == 1:
+        return f"{wuc}: {system}, {definition} (Confidence: {confidence:.2f}%)"
+    else:
+        return wuc, definition, system, confidence
