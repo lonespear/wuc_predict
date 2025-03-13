@@ -71,7 +71,7 @@ st.divider()
 
 # CSV Upload and Batch Prediction
 st.markdown("### Upload a CSV File for Batch Prediction 📂")
-uploaded_file = st.file_uploader("Upload a CSV file with a column named 'Discrepancy'", type=['csv'])
+uploaded_file = st.file_uploader("Upload a CSV file with two columns for the discrepancy and corrected action.", type=['csv'])
 
 if uploaded_file is not None:
     try:
