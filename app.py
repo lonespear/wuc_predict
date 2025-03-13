@@ -79,10 +79,24 @@ if uploaded_file is not None:
         corpus = df.iloc[:,0] + " " + df.iloc[:,1]
         st.success("File uploaded successfully! Processing predictions...")
         
-        # Run predictions
-        df['Predicted WUC'] = corpus.apply(predict_discrepancy)
-        
-        # Display the results
+        # Initialize progress bar
+        progress_bar = st.progress(0)
+        total = len(corpus)
+
+        # Run predictions with progress update
+        predictions = []
+        for idx, text in enumerate(corpus):
+            predictions.append(predict_discrepancy(text))
+            progress_bar.progress((idx + 1) / total)  # Update progress
+
+        # Add predictions to DataFrame
+        df['Predicted WUC'] = predictions
+
+        # Complete progress
+        progress_bar.empty()
+        st.success("Predictions complete! ✅")
+
+        # Display results
         st.write("### Prediction Results:")
         st.dataframe(df)
         
