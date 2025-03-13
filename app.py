@@ -65,3 +65,33 @@ if st.button("Predict Work User Code ✈️"):
         st.markdown(f"<div class='result-box'>Predicted Work User Code: <br> <strong>{predicted_code}</strong></div>", unsafe_allow_html=True)
     else:
         st.error("Please enter a discrepancy description.")
+
+st.divider()
+
+# CSV Upload and Batch Prediction
+st.markdown("### Upload a CSV File for Batch Prediction 📂")
+uploaded_file = st.file_uploader("Upload a CSV file with a column named 'Discrepancy'", type=['csv'])
+
+if uploaded_file is not None:
+    try:
+        df = pd.read_csv(uploaded_file)
+        corpus = df.iloc[:,0] + " " + df.iloc[:,1]
+        st.success("File uploaded successfully! Processing predictions...")
+        
+        # Run predictions
+        df['Predicted WUC'] = corpus.apply(predict_discrepancy)
+        
+        # Display the results
+        st.write("### Prediction Results:")
+        st.dataframe(df)
+        
+        # Provide a download button for the results
+        csv_output = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Predictions as CSV 📥",
+            data=csv_output,
+            file_name="wuc_predictions.csv",
+            mime="text/csv",
+        )
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
