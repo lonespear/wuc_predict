@@ -37,9 +37,9 @@ from transformers import (
 # =============================================================================
 # Config
 # =============================================================================
-BASE_MODEL = "answerdotai/ModernBERT-base"   # alternatives: bert-base-uncased,
-                                              # microsoft/deberta-v3-base,
-                                              # answerdotai/ModernBERT-large
+BASE_MODEL = "answerdotai/ModernBERT-large"  # alternatives: ModernBERT-base,
+                                              # microsoft/deberta-v3-large,
+                                              # bert-base-uncased
 DATA_DIR = Path("data_splits")
 OUT_DIR = Path("wuc-model-v2")
 MAX_LEN = 128
