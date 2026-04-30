@@ -101,15 +101,20 @@ def main() -> None:
           f"mean: {counts.mean():.1f}, max: {counts.max()}")
 
     # =========================================================================
-    # 7. STRATIFIED 80/10/10 SPLIT
+    # 7. 80/10/10 SPLIT — first split stratified, second random
+    #    Stratifying the second split fails when a class has only 1 sample in
+    #    the 20% temp set (e.g. classes with exactly 5 total examples).
+    #    The temp set is already class-balanced from the first split, so a
+    #    random 50/50 inside it stays approximately balanced.
     # =========================================================================
     train_df, tmp_df = train_test_split(
         df, test_size=0.20, stratify=df["Corrected WUC"], random_state=SEED
     )
-    val_df, test_df = train_test_split(
-        tmp_df, test_size=0.50, stratify=tmp_df["Corrected WUC"], random_state=SEED
-    )
+    val_df, test_df = train_test_split(tmp_df, test_size=0.50, random_state=SEED)
     print(f"Train: {len(train_df):,} | Val: {len(val_df):,} | Test: {len(test_df):,}")
+    print(f"Classes in train: {train_df['Corrected WUC'].nunique():,}")
+    print(f"Classes in val:   {val_df['Corrected WUC'].nunique():,}")
+    print(f"Classes in test:  {test_df['Corrected WUC'].nunique():,}")
 
     # =========================================================================
     # 8. LABEL MAP — train+val only (test stays unseen until eval)
