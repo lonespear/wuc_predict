@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+.streamlit/secrets.toml
+
+# Local data — do NOT commit (data sensitivity)
+FinalData.csv
+kc135_wuc_lookup_levels.csv
+*.parquet
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

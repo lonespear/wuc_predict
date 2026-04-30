@@ -2,3 +2,7 @@ streamlit
 torch
 transformers
 huggingface-hub
+pandas
+matplotlib
+ollama
+anthropic
