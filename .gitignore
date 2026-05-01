@@ -13,6 +13,7 @@ new_data.csv
 data_splits/
 wuc-model-v2/
 wuc-model-v2-extended/
+wuc-model-hier/
 *.parquet
 
 # Editor / OS
