@@ -57,24 +57,63 @@ tab_predict, tab_query, tab_profile = st.tabs(
 # ---------------------------------------------------------------- Tab 1
 with tab_predict:
     st.header("Predict Work Unit Code from free text")
-    st.caption("Loads the fine-tuned BERT classifier (`jonday/wuc-model`).")
+    st.caption(
+        "Provide the discrepancy and (when available) the corrective action — "
+        "the model was trained on both fields joined together."
+    )
 
     @st.cache_resource
     def get_predictor():
-        from model_loader import predict_discrepancy
-        return predict_discrepancy
+        from model_loader import predict_top_k, build_input_text
+        return predict_top_k, build_input_text
 
     try:
-        predict_discrepancy = get_predictor()
-        text = st.text_area("Discrepancy description:", height=100)
+        predict_top_k, build_input_text = get_predictor()
+        col_d, col_c = st.columns(2)
+        with col_d:
+            discrepancy = st.text_area(
+                "Discrepancy",
+                height=140,
+                placeholder="e.g. PILOT SEAT REQUIRES EXCESSIVE FORCE TO ADJUST",
+            )
+        with col_c:
+            corrective = st.text_area(
+                "Corrective Action (optional but improves accuracy)",
+                height=140,
+                placeholder="e.g. REPLACED LATERAL SEAT ADJUSTER PER TM 1C-135-06",
+            )
+
         if st.button("Predict WUC", key="predict_btn"):
-            if text.strip():
-                wuc, definition, system, conf = predict_discrepancy(text, method=2)
-                st.success(f"**{wuc}** — {system} / {definition}  \nConfidence: {conf:.1f}%")
-                st.session_state["predicted_wuc"] = wuc
-                st.info("Jump to the WUC Profile tab to see why, when, where, and lifecycle.")
+            if not discrepancy.strip():
+                st.warning("Discrepancy text is required.")
             else:
-                st.warning("Enter a description.")
+                text = build_input_text(discrepancy, corrective)
+                results = predict_top_k(text, k=3)
+                if results:
+                    top = results[0]
+                    st.success(
+                        f"**{top['wuc']}** — {top['system']} / {top['definition']}  \n"
+                        f"Confidence: {top['confidence']:.1f}%"
+                    )
+                    st.session_state["predicted_wuc"] = top["wuc"]
+
+                    if len(results) > 1:
+                        st.markdown("**Other candidates**")
+                        for r in results[1:]:
+                            st.markdown(
+                                f"- `{r['wuc']}` — {r['system']} / {r['definition']} "
+                                f"({r['confidence']:.1f}%)"
+                            )
+
+                    if not corrective.strip():
+                        st.caption(
+                            "ℹ️ Corrective action was empty — model accuracy is "
+                            "highest when both fields are provided. Top-3 above "
+                            "may help if the leading prediction looks off."
+                        )
+                    st.info("Jump to the WUC Profile tab to see why, when, where, and lifecycle.")
+                else:
+                    st.error("No prediction returned.")
     except Exception as e:
         st.error(f"Model unavailable: {e}")
 
