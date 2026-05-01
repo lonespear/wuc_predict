@@ -91,10 +91,22 @@ with tab_predict:
                 results = predict_top_k(text, k=3)
                 if results:
                     top = results[0]
-                    st.success(
-                        f"**{top['wuc']}** — {top['system']} / {top['definition']}  \n"
-                        f"Confidence: {top['confidence']:.1f}%"
-                    )
+                    conf = top["confidence"]
+                    header = f"**{top['wuc']}** — {top['system']} / {top['definition']}  \nConfidence: {conf:.1f}%"
+
+                    # Confidence bands — be honest with the user about uncertainty
+                    if conf >= 70:
+                        st.success(header)
+                    elif conf >= 30:
+                        st.warning(header + "  \n_Moderate confidence — review the alternatives below._")
+                    else:
+                        st.error(
+                            header
+                            + "  \n_⚠️ Low confidence — the model is uncertain about this input._"
+                            + "  \nLikely causes: input is out-of-distribution (informal phrasing, "
+                            "uncommon issue, missing corrective action). Treat the top-1 as a guess "
+                            "and review all candidates below."
+                        )
                     st.session_state["predicted_wuc"] = top["wuc"]
 
                     if len(results) > 1:
@@ -107,9 +119,11 @@ with tab_predict:
 
                     if not corrective.strip():
                         st.caption(
-                            "ℹ️ Corrective action was empty — model accuracy is "
-                            "highest when both fields are provided. Top-3 above "
-                            "may help if the leading prediction looks off."
+                            "ℹ️ Corrective action was empty — the model was trained on "
+                            "discrepancy + corrective action joined together. Accuracy is "
+                            "much higher when both fields are provided. The model also expects "
+                            "maintenance-report style (all caps, terse, technical), e.g. "
+                            "`PILOT SEAT BELT FRAYED` rather than `seatbelt is frayed`."
                         )
                     st.info("Jump to the WUC Profile tab to see why, when, where, and lifecycle.")
                 else:
