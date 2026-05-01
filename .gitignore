@@ -12,6 +12,7 @@ kc135_wuc_lookup_levels.csv
 new_data.csv
 data_splits/
 wuc-model-v2/
+wuc-model-v2-extended/
 *.parquet
 
 # Editor / OS
