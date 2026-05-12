@@ -7,6 +7,7 @@ Tab 3: WUC Profile summarizer (new).
 from __future__ import annotations
 
 import json
+import os
 import pandas as pd
 import streamlit as st
 
@@ -206,11 +207,26 @@ def _year_month_heatmap(records: list, value_name: str = "Issues"):
     )
 
 
+_WORLD_TOPO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "world-110m.json")
+
+
+@st.cache_data(show_spinner=False)
+def _world_topo() -> dict | None:
+    """Country outlines (topojson, world-atlas 110m), bundled in the repo so the
+    map has zero runtime network dependency — important behind the JupyterHub
+    reverse proxy, where outbound CDN fetches from the browser may be blocked."""
+    try:
+        with open(_WORLD_TOPO_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
 def _world_map(records: list, value_name: str = "Records"):
-    """Altair world map: filled sphere + graticule + (country outlines if the
-    CDN is reachable) + bubbles at base lat/lon sized by count. Renders entirely
-    client-side via Vega-Lite — works behind reverse proxies where st.map's
-    pydeck/tile layers often don't."""
+    """Altair world map: filled sphere + graticule + country outlines + bubbles at
+    base lat/lon sized by count. Renders entirely client-side via Vega-Lite with
+    all geometry inlined in the spec — works behind reverse proxies where st.map's
+    pydeck/tile layers (and remote topojson fetches) often don't."""
     import altair as alt
 
     if not records:
@@ -224,11 +240,14 @@ def _world_map(records: list, value_name: str = "Records"):
     graticule = alt.Chart(alt.graticule(step=[30, 30])).mark_geoshape(
         stroke="#c9d4e0", strokeWidth=0.4, fill=None
     )
-    land = alt.Chart(
-        alt.topo_feature(
-            "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json", "countries"
-        )
-    ).mark_geoshape(fill="#dbe4ee", stroke="#ffffff", strokeWidth=0.3)
+    layers = [sphere]
+    topo = _world_topo()
+    if topo is not None:
+        land = alt.Chart(
+            alt.Data(values=topo, format=alt.DataFormat(type="topojson", feature="countries"))
+        ).mark_geoshape(fill="#dbe4ee", stroke="#ffffff", strokeWidth=0.3)
+        layers.append(land)
+    layers.append(graticule)
     pts = (
         alt.Chart(d)
         .mark_circle(opacity=0.78, color="#d62728", stroke="#7c1719", strokeWidth=0.6)
@@ -239,8 +258,9 @@ def _world_map(records: list, value_name: str = "Records"):
             tooltip=[alt.Tooltip("base:N", title="Base"), alt.Tooltip(f"{value_name}:Q")],
         )
     )
+    layers.append(pts)
     return (
-        alt.layer(sphere, land, graticule, pts)
+        alt.layer(*layers)
         .project("naturalEarth1")
         .properties(height=440)
         .configure_view(stroke=None)
