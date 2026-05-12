@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import json
 import pandas as pd
-import matplotlib.pyplot as plt
 import streamlit as st
-from matplotlib.ticker import MaxNLocator
 
 from data_config import resolve_data_path, resolve_lookup_path
-from sum_utils import parse_user_query, analyze_results, format_answer
+from sum_utils import parse_user_query, analyze_results, describe_filters
 from wuc_profile import build_profile
 from llm_adapter import available_adapters
 
@@ -132,43 +130,132 @@ with tab_predict:
         st.error(f"Model unavailable: {e}")
 
 # ---------------------------------------------------------------- Tab 2
+def _hbar(data: dict, value_name: str, label_name: str, label_limit: int = 60):
+    """Horizontal bar chart from a {label: count} dict, biggest on top."""
+    import altair as alt
+
+    d = pd.DataFrame(list(data.items()), columns=[label_name, value_name])
+    d[label_name] = d[label_name].astype(str).str.slice(0, label_limit)
+    return (
+        alt.Chart(d)
+        .mark_bar()
+        .encode(
+            x=alt.X(f"{value_name}:Q", title=value_name),
+            y=alt.Y(f"{label_name}:N", sort="-x", title=None),
+            tooltip=[label_name, value_name],
+        )
+        .properties(height=max(120, 26 * len(d)))
+    )
+
+
 with tab_query:
     st.header("Ask a data-driven question")
     query = st.text_input(
         "Question:",
-        placeholder="e.g. How many issues has 57-1508 had from Jan 2023 to Dec 2024?",
+        placeholder="e.g. How many 14AD0 issues since summer 2025? · issues for 57-1508 from Jan 2023 to Dec 2024",
     )
-    if st.button("Run Query", key="query_btn") and query.strip():
+    run = st.button("Run Query", key="query_btn")
+
+    if run and query.strip():
         filters = parse_user_query(query)
         analysis = analyze_results(df, desc_map=desc_map, **filters)
-        st.subheader("Answer")
-        st.text(format_answer(analysis))
 
-        if analysis["issues_by_month"]:
-            month_df = pd.DataFrame(
-                list(analysis["issues_by_month"].items()), columns=["Month", "Count"]
+        # --- 1. Echo the interpreted filters so the user trusts the answer ---
+        applied = describe_filters(filters)
+        if applied:
+            st.info("🔎 Interpreted as: " + " · ".join(applied))
+        else:
+            st.warning(
+                "⚠️ No tail / WUC / date filter was recognized in that question — "
+                "showing **all records**. Try e.g. `WUC 14AD0 since summer 2025` "
+                "or `57-1508 from Jan 2023 to Dec 2024`."
             )
-            month_df["Month"] = pd.to_datetime(month_df["Month"])
-            month_df = month_df.sort_values("Month")
-            month_df["Label"] = month_df["Month"].dt.strftime("%b %Y")
-            c1, c2, c3 = st.columns([1, 2, 1])
-            with c2:
-                fig, ax = plt.subplots(figsize=(5, 4))
-                ax.bar(month_df["Label"], month_df["Count"])
-                plt.xticks(rotation=45, ha="right")
-                ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-                ax.set_xlabel("Month")
-                ax.set_ylabel("Issues")
-                plt.tight_layout()
-                st.pyplot(fig)
 
-        if analysis["wuc_breakdown"]:
-            st.subheader("Top Problem Areas (WUC)")
-            wuc_df = pd.DataFrame(
-                list(analysis["wuc_breakdown"].items()), columns=["WUC", "Count"]
-            )
-            wuc_df.insert(0, "Rank", range(1, len(wuc_df) + 1))
-            st.table(wuc_df)
+        total = analysis["total_issues"]
+        if total == 0:
+            st.error("No matching records found.")
+        else:
+            # --- 2. Headline metrics ------------------------------------
+            pct = 100.0 * total / len(df)
+            cols = st.columns(5)
+            cols[0].metric("Records", f"{total:,}", help=f"{pct:.1f}% of all {len(df):,} records")
+            cols[1].metric("Distinct airframes", f"{analysis['distinct_tails']:,}")
+            cols[2].metric("Distinct WUCs", f"{analysis['distinct_wucs']:,}")
+            if analysis["date_span"]:
+                cols[3].metric("Covers", f"{analysis['date_span'][0]} → {analysis['date_span'][1]}")
+            prior = analysis["prior_period_count"]
+            if prior is not None:
+                delta = total - prior
+                pct_delta = (100.0 * delta / prior) if prior else 0.0
+                cols[4].metric("vs prior period", f"{prior:,}", delta=f"{delta:+,} ({pct_delta:+.0f}%)")
+
+            # --- 3. Time series (line, not 70 rotated bars) -------------
+            if analysis["issues_by_month"]:
+                st.subheader("Volume over time")
+                m = pd.DataFrame(analysis["issues_by_month"].items(), columns=["Month", "Issues"])
+                m["Month"] = pd.to_datetime(m["Month"])
+                m = m.sort_values("Month").set_index("Month")
+                if len(m) >= 6:
+                    m["12-mo avg"] = m["Issues"].rolling(12, min_periods=3).mean()
+                st.line_chart(m)
+
+            # --- 4. Top discrepancies / fixes side by side -------------
+            c_disc, c_fix = st.columns(2)
+            with c_disc:
+                if analysis["top_discrepancies"]:
+                    st.subheader("Top discrepancies")
+                    st.altair_chart(_hbar(analysis["top_discrepancies"], "Count", "Discrepancy"), use_container_width=True)
+                    with st.expander("raw counts"):
+                        st.dataframe(pd.DataFrame(analysis["top_discrepancies"].items(), columns=["Discrepancy", "Count"]), hide_index=True, use_container_width=True)
+            with c_fix:
+                if analysis["top_fixes"]:
+                    st.subheader("Top corrective actions")
+                    st.altair_chart(_hbar(analysis["top_fixes"], "Count", "Corrective action"), use_container_width=True)
+                    with st.expander("raw counts"):
+                        st.dataframe(pd.DataFrame(analysis["top_fixes"].items(), columns=["Corrective action", "Count"]), hide_index=True, use_container_width=True)
+
+            # --- 5. Where + seasonality --------------------------------
+            c_base, c_seas = st.columns(2)
+            with c_base:
+                if analysis["base_breakdown"]:
+                    st.subheader("By base")
+                    st.altair_chart(_hbar(analysis["base_breakdown"], "Count", "Base"), use_container_width=True)
+            with c_seas:
+                if analysis["seasonality"] and sum(analysis["seasonality"].values()) > 0:
+                    st.subheader("Seasonality (month-of-year, all years)")
+                    s = pd.DataFrame(analysis["seasonality"].items(), columns=["Month", "Issues"]).set_index("Month")
+                    st.bar_chart(s)
+
+            # --- 6. Top problem-area WUCs (drill-through) --------------
+            if analysis["wuc_breakdown"]:
+                st.subheader("Top problem areas (WUC)")
+                st.altair_chart(_hbar(analysis["wuc_breakdown"], "Count", "WUC", label_limit=70), use_container_width=True)
+                wuc_codes = [lbl.split(" ")[0] for lbl in analysis["wuc_breakdown"]]
+                pick = st.selectbox("Inspect a WUC in the Profile tab:", ["—"] + wuc_codes, key="q_wuc_pick")
+                if pick != "—":
+                    st.session_state["predicted_wuc"] = pick
+                    st.success(f"Set **{pick}** — switch to the 📊 WUC Profile tab and click *Build Profile*.")
+
+            # --- 7. Worst airframes (only when not already tail-filtered)
+            if analysis["tail_leaderboard"]:
+                with st.expander("Worst airframes for this query (top 10 by record count)"):
+                    st.dataframe(
+                        pd.DataFrame(analysis["tail_leaderboard"].items(), columns=["Tail Number", "Records"]),
+                        hide_index=True, use_container_width=True,
+                    )
+
+            # --- 8. Underlying records ---------------------------------
+            with st.expander(f"Show matching records ({total:,} rows)"):
+                show = analysis["results"]
+                st.dataframe(show.head(2000), use_container_width=True, hide_index=True)
+                if len(show) > 2000:
+                    st.caption("Showing first 2,000 rows; download for the full set.")
+                st.download_button(
+                    "Download all matching records (CSV)",
+                    show.to_csv(index=False).encode("utf-8"),
+                    file_name="wuc_query_results.csv",
+                    mime="text/csv",
+                )
 
 # ---------------------------------------------------------------- Tab 3
 with tab_profile:
