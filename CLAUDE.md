@@ -107,11 +107,22 @@ doubts it.
 
 ## Tab 1 UX (current)
 
+**Note (2026-05-12):** `build_input_text()` now **uppercases** all inputs and
+accepts all 5 training fields — Discrepancy, Corrective Action, WCE Narrative,
+How Mal, Action Taken (the last 3 are wired through a `st.expander` of optional
+inputs below the two main text areas). This fixes the OOD-at-inference issue
+(training text is uppercase maintenance-report style; inference used to be
+lowercase + only 2 fields). Also: the old **"Unknown Definition"** WUC-lookup
+gap is fixed — `model_loader.py` now merges `codes.json` with
+`kc135_wuc_lookup_dictionary.csv` (codes.json wins, CSV fills gaps); if a code
+is still missing the fallback string is now `(no dictionary entry for <wuc>)`.
+
 Two text fields side-by-side:
 - **Discrepancy** (required)
 - **Corrective Action** (optional but improves accuracy substantially)
+- plus **WCE Narrative / How Mal / Action Taken** in an optional expander
 
-Joined with `[SEP]` → `predict_top_k(text, k=3)`.
+Joined (uppercased) with `[SEP]` → `predict_top_k(text, k=3)`.
 
 Top-1 displayed with **confidence-band coloring**:
 

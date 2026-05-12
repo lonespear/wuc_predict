@@ -184,11 +184,12 @@ wuc_predict/
 
 ### Classifier (Tab 1)
 
-| Model | Architecture | Train set | Test acc | Test macro F1 |
-|---|---|---|---|---|
-| Original `jonday/wuc-model` | bert-base-uncased | unknown | — | — |
-| `wuc-model-v2` (flat) | ModernBERT-large | 125k / 1,251 classes | **0.904** | **0.772** |
-| `wuc-model-hier` (hierarchical) | ModernBERT-large + aux heads | 125k / 1,251 classes | 0.903 | 0.772 |
+| Model | Architecture | Test acc | Macro F1 | Test loss | Status |
+|---|---|---|---|---|---|
+| Original `jonday/wuc-model` | bert-base-uncased | — | — | — | legacy (pre-CUI-policy) |
+| `wuc-model-v2 (flat)` | ModernBERT-large | 0.904 | 0.772 | 1.035 | superseded |
+| `wuc-model-v2-extended (10 ep)` | ModernBERT-large + 5 more epochs | 0.906 | 0.771 | 1.290 | superseded — overfit |
+| `wuc-model-hier (hierarchical)` | ModernBERT-large + aux system/subsystem heads | **0.903** | **0.772** | **0.555** | 🚀 deployed |
 
 Macro F1 ties between flat and hierarchical, but **hierarchical has 47% lower
 test loss** (1.04 → 0.55) — significantly better calibrated, which matters for
@@ -216,9 +217,13 @@ git clone https://github.com/lonespear/wuc_predict.git
 cd wuc_predict
 pip install -r requirements.txt
 
-# Place your data files (gitignored — never committed)
-cp /path/to/FinalData.csv .
-# kc135_wuc_lookup_dictionary.csv ships with the repo as a fallback
+# Place your data file (gitignored — never committed). Run this FROM INSIDE the
+# wuc_predict directory; the trailing "." means "copy it here".
+cp /full/path/to/FinalData.csv .
+# — or, instead of copying, point the app at it without moving it:
+#   export WUC_DATA_PATH=/full/path/to/FinalData.csv
+# If FinalData.csv is already in the wuc_predict directory, skip this step entirely.
+# kc135_wuc_lookup_dictionary.csv already ships with the repo as the WUC-description fallback.
 
 # Run
 streamlit run main_app.py

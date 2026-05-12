@@ -57,7 +57,9 @@ with tab_predict:
     st.header("Predict Work Unit Code from free text")
     st.caption(
         "Provide the discrepancy and (when available) the corrective action — "
-        "the model was trained on both fields joined together."
+        "the model was trained on five maintenance-report fields joined together "
+        "(Discrepancy, Corrective Action, WCE Narrative, How Mal, Action Taken). "
+        "All but the discrepancy are optional, but every field you add improves accuracy."
     )
 
     @st.cache_resource
@@ -81,11 +83,25 @@ with tab_predict:
                 placeholder="e.g. REPLACED LATERAL SEAT ADJUSTER PER TM 1C-135-06",
             )
 
+        with st.expander("Additional fields (optional — improves accuracy further)", expanded=False):
+            wce_narrative = st.text_input(
+                "WCE Narrative",
+                placeholder="e.g. WORK PERFORMED IAW TM 1C-135-06",
+            )
+            how_mal = st.text_input(
+                "How Mal",
+                placeholder="e.g. WORN / BROKEN / OUT OF ADJUSTMENT",
+            )
+            action_taken = st.text_input(
+                "Action Taken",
+                placeholder="e.g. REPLACED / REPAIRED / ADJUSTED",
+            )
+
         if st.button("Predict WUC", key="predict_btn"):
             if not discrepancy.strip():
                 st.warning("Discrepancy text is required.")
             else:
-                text = build_input_text(discrepancy, corrective)
+                text = build_input_text(discrepancy, corrective, wce_narrative, how_mal, action_taken)
                 results = predict_top_k(text, k=3)
                 if results:
                     top = results[0]
@@ -102,7 +118,7 @@ with tab_predict:
                             header
                             + "  \n_⚠️ Low confidence — the model is uncertain about this input._"
                             + "  \nLikely causes: input is out-of-distribution (informal phrasing, "
-                            "uncommon issue, missing corrective action). Treat the top-1 as a guess "
+                            "uncommon issue, missing corrective action / other fields). Treat the top-1 as a guess "
                             "and review all candidates below."
                         )
                     st.session_state["predicted_wuc"] = top["wuc"]
@@ -117,10 +133,11 @@ with tab_predict:
 
                     if not corrective.strip():
                         st.caption(
-                            "ℹ️ Corrective action was empty — the model was trained on "
-                            "discrepancy + corrective action joined together. Accuracy is "
-                            "much higher when both fields are provided. The model also expects "
-                            "maintenance-report style (all caps, terse, technical), e.g. "
+                            "ℹ️ Corrective action was empty — the model was trained on the "
+                            "discrepancy plus corrective action / WCE narrative / how mal / action "
+                            "taken joined together. Accuracy is much higher when more of these "
+                            "fields are provided. Input is uppercased automatically, but keeping it "
+                            "maintenance-report style (terse, technical) helps, e.g. "
                             "`PILOT SEAT BELT FRAYED` rather than `seatbelt is frayed`."
                         )
                     st.info("Jump to the WUC Profile tab to see why, when, where, and lifecycle.")

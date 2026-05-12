@@ -4,10 +4,10 @@ Set WUC_MODEL_PATH to point at a local checkpoint directory (e.g. produced by
 train_hierarchical.py). Defaults to the legacy HF model for backward compat.
 
 The active model expects text formatted as:
-    "<discrepancy> [SEP] <corrective_action>"
-matching prepare_data.py's training format. predict_discrepancy() accepts a
-single string; the caller is responsible for the [SEP] join when both fields
-are available.
+    "<discrepancy> [SEP] <corrective_action> [SEP] <wce_narrative> [SEP] <how_mal> [SEP] <action_taken>"
+(only non-empty fields, each uppercased) matching prepare_data.py's training
+format. Use build_input_text() to construct it; predict_discrepancy() /
+predict_top_k() accept the already-built string.
 """
 from __future__ import annotations
 
@@ -36,9 +36,26 @@ else:
         wuc_mapping = json.load(f)
     index_to_wuc = {v: k for k, v in wuc_mapping.items()}
 
-# Lookups for the human-readable response
+# Lookups for the human-readable response.
+# Primary source: codes.json. Fallback: kc135_wuc_lookup_dictionary.csv (ships
+# with the repo) — covers WUCs the model predicts that aren't in codes.json so
+# the UI shows a real description instead of "Unknown Definition".
 with open("codes.json", "r") as f:
     wuc_defs = json.load(f)
+try:
+    import pandas as _pd
+
+    _lookup = _pd.read_csv("kc135_wuc_lookup_dictionary.csv")
+    _cols = list(_lookup.columns)
+    _code_col = "wuc_code" if "wuc_code" in _cols else _cols[0]
+    _desc_col = "description" if "description" in _cols else _cols[1]
+    _csv_defs = dict(
+        zip(_lookup[_code_col].astype(str), _lookup[_desc_col].astype(str))
+    )
+    # codes.json wins; CSV fills the gaps.
+    wuc_defs = {**_csv_defs, **wuc_defs}
+except FileNotFoundError:
+    pass
 with open("main_system.json", "r") as f:
     main_system = json.load(f)
 
@@ -65,7 +82,7 @@ def predict_discrepancy(text: str, method: int = 1):
     confidence = float(probs[0, predicted].item()) * 100.0
 
     wuc = index_to_wuc.get(predicted, "Unknown WUC")
-    definition = wuc_defs.get(wuc, "Unknown Definition")
+    definition = wuc_defs.get(wuc, f"(no dictionary entry for {wuc})")
     system = main_system.get(wuc[:2], "Unknown Main System")
     if method == 1:
         return f"{wuc}: {system}, {definition} (Confidence: {confidence:.2f}%)"
@@ -94,20 +111,31 @@ def predict_top_k(text: str, k: int = 3) -> list[dict]:
         wuc = index_to_wuc.get(int(idx), "Unknown WUC")
         results.append({
             "wuc": wuc,
-            "definition": wuc_defs.get(wuc, "Unknown Definition"),
+            "definition": wuc_defs.get(wuc, f"(no dictionary entry for {wuc})"),
             "system": main_system.get(wuc[:2], "Unknown Main System"),
             "confidence": float(p) * 100.0,
         })
     return results
 
 
-def build_input_text(discrepancy: str, corrective_action: str = "") -> str:
-    """Combine discrepancy + corrective action into the [SEP]-joined format
-    used at training time. Returns just the discrepancy if no action provided.
+def build_input_text(
+    discrepancy,
+    corrective_action="",
+    wce_narrative="",
+    how_mal="",
+    action_taken="",
+) -> str:
+    """Combine the five training text fields into the [SEP]-joined, UPPERCASE
+    format used at training time (see prepare_data.py TEXT_FIELDS).
+
+    Field order: Discrepancy, Corrective Action, WCE Narrative, How Mal,
+    Action Taken. Only non-empty fields (after strip) are included; each part
+    is uppercased before joining with " [SEP] ", because the training text is
+    maintenance-report style (all caps, terse, technical). Returns a single
+    string.
     """
     parts = []
-    if discrepancy and discrepancy.strip():
-        parts.append(discrepancy.strip())
-    if corrective_action and corrective_action.strip():
-        parts.append(corrective_action.strip())
+    for value in (discrepancy, corrective_action, wce_narrative, how_mal, action_taken):
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip().upper())
     return " [SEP] ".join(parts)
