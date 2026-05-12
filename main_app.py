@@ -388,6 +388,21 @@ with tab_profile:
                     st.markdown("**Year-over-year**")
                     st.altair_chart(_bar(profile["year_histogram"], "Records", "Year"), use_container_width=True)
 
+            if profile.get("base_geo"):
+                st.markdown("**Where — base map** (bubble size ∝ records at that base)")
+                gdf = pd.DataFrame(profile["base_geo"])
+                mx = max(gdf["count"].max(), 1)
+                # st.map size is in metres; sqrt so bubble *area* ~ count
+                gdf["size"] = (gdf["count"] / mx) ** 0.5 * 70000 + 12000
+                try:
+                    st.map(gdf, latitude="lat", longitude="lon", size="size", color="#d62728")
+                except TypeError:
+                    # older Streamlit: auto-detects lat/lon columns, no size/color
+                    st.map(gdf.rename(columns={"lat": "latitude", "lon": "longitude"}))
+                cov = profile.get("base_geo_coverage")
+                if cov and cov[1]:
+                    st.caption(f"{cov[0]:,} of {cov[1]:,} records ({100.0 * cov[0] / cov[1]:.0f}%) at geolocated bases.")
+
             if profile["base_distribution"]:
                 st.markdown("**Where — by base**")
                 st.altair_chart(_hbar(profile["base_distribution"], "Records", "Base"), use_container_width=True)

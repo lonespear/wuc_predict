@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from base_geo import geolocate
 from data_config import WHEN_DISCOVERED_PHASE, TYPE_MAINT_PHASE
 
 
@@ -121,6 +122,8 @@ def build_profile(
         "top_corrective_actions": [],
         "top_corrective_keywords": [],
         "base_distribution": {},
+        "base_geo": [],
+        "base_geo_coverage": None,
         "month_histogram": {},
         "year_histogram": {},
         "year_month_matrix": [],
@@ -151,9 +154,25 @@ def build_profile(
         profile["top_corrective_keywords"] = _top_keywords(subset["Corrective Action"], 10)
 
     if "Base" in subset.columns:
+        base_counts = subset["Base"].astype(str).str.strip().value_counts()
         profile["base_distribution"] = (
-            subset["Base"].astype(str).str.strip().str.title().value_counts().head(10).to_dict()
+            base_counts.rename(lambda b: b.title()).head(10).to_dict()
         )
+        geo: dict[str, dict[str, Any]] = {}
+        mapped = 0
+        for base_raw, cnt in base_counts.items():
+            hit = geolocate(base_raw)
+            if hit is None:
+                continue
+            name, lat, lon = hit
+            mapped += int(cnt)
+            if name in geo:
+                geo[name]["count"] += int(cnt)
+            else:
+                geo[name] = {"base": name, "lat": lat, "lon": lon, "count": int(cnt)}
+        profile["base_geo"] = sorted(geo.values(), key=lambda r: r["count"], reverse=True)
+        total_base = int(base_counts.sum())
+        profile["base_geo_coverage"] = (mapped, total_base)
 
     profile["month_histogram"] = _month_histogram(subset)
 
