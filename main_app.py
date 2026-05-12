@@ -165,6 +165,47 @@ def _hbar(data: dict, value_name: str, label_name: str, label_limit: int = 60):
     )
 
 
+def _bar(data: dict, value_name: str, label_name: str, keep_order: bool = True):
+    """Vertical bar chart that preserves dict insertion order (for time-like axes)."""
+    import altair as alt
+
+    d = pd.DataFrame(list(data.items()), columns=[label_name, value_name])
+    d[label_name] = d[label_name].astype(str)
+    enc_x = alt.X(f"{label_name}:N", title=None, sort=list(d[label_name]) if keep_order else "-y")
+    return (
+        alt.Chart(d)
+        .mark_bar()
+        .encode(x=enc_x, y=alt.Y(f"{value_name}:Q", title=value_name), tooltip=[label_name, value_name])
+        .properties(height=240)
+    )
+
+
+def _year_month_heatmap(records: list, value_name: str = "Issues"):
+    """Calendar heatmap: year (rows) x month (cols), color = count."""
+    import altair as alt
+
+    if not records:
+        return None
+    d = pd.DataFrame(records)
+    if not {"year", "month", "count"}.issubset(d.columns):
+        return None
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    d["Month"] = d["month"].astype(int).map(lambda m: months[m - 1])
+    d["Year"] = d["year"].astype(int).astype(str)
+    d = d.rename(columns={"count": value_name})
+    return (
+        alt.Chart(d)
+        .mark_rect()
+        .encode(
+            x=alt.X("Month:N", sort=months, title=None),
+            y=alt.Y("Year:N", title=None, sort="descending"),
+            color=alt.Color(f"{value_name}:Q", scale=alt.Scale(scheme="yelloworangered"), title=value_name),
+            tooltip=["Year", "Month", value_name],
+        )
+        .properties(height=max(150, 26 * d["Year"].nunique()))
+    )
+
+
 with tab_query:
     st.header("Ask a data-driven question")
     query = st.text_input(
@@ -215,6 +256,19 @@ with tab_query:
                 if len(m) >= 6:
                     m["12-mo avg"] = m["Issues"].rolling(12, min_periods=3).mean()
                 st.line_chart(m)
+
+                # Calendar heatmap (year x month) — quickly surfaces seasonality
+                # vs. year-over-year drift at a glance.
+                ym = m.reset_index()
+                recs = [
+                    {"year": int(r["Month"].year), "month": int(r["Month"].month), "count": int(r["Issues"])}
+                    for _, r in ym.iterrows()
+                ]
+                if len({r["year"] for r in recs}) >= 2:
+                    hm = _year_month_heatmap(recs)
+                    if hm is not None:
+                        st.caption("Records per month — darker = more")
+                        st.altair_chart(hm, use_container_width=True)
 
             # --- 4. Top discrepancies / fixes side by side -------------
             c_disc, c_fix = st.columns(2)
@@ -317,27 +371,26 @@ with tab_profile:
             if profile["date_range"]:
                 m3.metric("Date range", f"{profile['date_range'][0][:7]} → {profile['date_range'][1][:7]}")
 
-            c_when, c_where = st.columns(2)
+            # When — calendar heatmap up top (subsumes both old bar charts), then
+            # the seasonality + year bars side by side underneath.
+            hm = _year_month_heatmap(profile["year_month_matrix"])
+            if hm is not None:
+                st.markdown("**When — records per month (darker = more)**")
+                st.altair_chart(hm, use_container_width=True)
+
+            c_when, c_year = st.columns(2)
             with c_when:
                 if profile["month_histogram"]:
-                    st.markdown("**Seasonality (by month)**")
-                    mh = pd.DataFrame(
-                        profile["month_histogram"].items(), columns=["Month", "Count"]
-                    )
-                    st.bar_chart(mh.set_index("Month"))
+                    st.markdown("**Seasonality (month-of-year, all years)**")
+                    st.altair_chart(_bar(profile["month_histogram"], "Records", "Month"), use_container_width=True)
+            with c_year:
                 if profile["year_histogram"]:
                     st.markdown("**Year-over-year**")
-                    yh = pd.DataFrame(
-                        profile["year_histogram"].items(), columns=["Year", "Count"]
-                    )
-                    st.bar_chart(yh.set_index("Year"))
-            with c_where:
-                if profile["base_distribution"]:
-                    st.markdown("**By base**")
-                    bd = pd.DataFrame(
-                        profile["base_distribution"].items(), columns=["Base", "Count"]
-                    )
-                    st.bar_chart(bd.set_index("Base"))
+                    st.altair_chart(_bar(profile["year_histogram"], "Records", "Year"), use_container_width=True)
+
+            if profile["base_distribution"]:
+                st.markdown("**Where — by base**")
+                st.altair_chart(_hbar(profile["base_distribution"], "Records", "Base"), use_container_width=True)
 
             c_life, c_phase = st.columns(2)
             with c_life:
@@ -368,11 +421,8 @@ with tab_profile:
                         st.markdown(f"- *{phrase[:200]}* ({count})")
 
             if profile["cooccurring_wucs"]:
-                st.markdown("**Frequently opened alongside (same JCN)**")
-                co = pd.DataFrame(
-                    profile["cooccurring_wucs"].items(), columns=["WUC", "Count"]
-                )
-                st.table(co)
+                st.markdown("**Frequently opened alongside (same job control number)**")
+                st.altair_chart(_hbar(profile["cooccurring_wucs"], "Times co-occurring", "WUC"), use_container_width=True)
 
             with st.expander("Raw profile JSON (for debugging / export)"):
                 st.json(profile, expanded=False)

@@ -123,6 +123,7 @@ def build_profile(
         "base_distribution": {},
         "month_histogram": {},
         "year_histogram": {},
+        "year_month_matrix": [],
         "flight_hour_buckets": {},
         "when_discovered_phase": {},
         "maint_type_phase": {},
@@ -160,6 +161,18 @@ def build_profile(
         profile["year_histogram"] = (
             subset["YEAR"].dropna().astype(int).value_counts().sort_index().to_dict()
         )
+
+    # Year x month matrix for a calendar heatmap (records: {year, month, count}).
+    if "Start Date" in subset.columns:
+        d = pd.to_datetime(subset["Start Date"], errors="coerce").dropna()
+        if not d.empty:
+            mat = (
+                pd.DataFrame({"year": d.dt.year, "month": d.dt.month})
+                .value_counts()
+                .reset_index(name="count")
+                .sort_values(["year", "month"])
+            )
+            profile["year_month_matrix"] = mat.to_dict("records")
 
     if "Flight Hours" in subset.columns:
         profile["flight_hour_buckets"] = _flight_hour_buckets(subset["Flight Hours"])
