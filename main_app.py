@@ -206,6 +206,47 @@ def _year_month_heatmap(records: list, value_name: str = "Issues"):
     )
 
 
+def _world_map(records: list, value_name: str = "Records"):
+    """Altair world map: filled sphere + graticule + (country outlines if the
+    CDN is reachable) + bubbles at base lat/lon sized by count. Renders entirely
+    client-side via Vega-Lite — works behind reverse proxies where st.map's
+    pydeck/tile layers often don't."""
+    import altair as alt
+
+    if not records:
+        return None
+    d = pd.DataFrame(records)
+    if not {"lat", "lon", "count"}.issubset(d.columns):
+        return None
+    d = d.rename(columns={"count": value_name})
+
+    sphere = alt.Chart(alt.sphere()).mark_geoshape(fill="#eaf1f8")
+    graticule = alt.Chart(alt.graticule(step=[30, 30])).mark_geoshape(
+        stroke="#c9d4e0", strokeWidth=0.4, fill=None
+    )
+    land = alt.Chart(
+        alt.topo_feature(
+            "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json", "countries"
+        )
+    ).mark_geoshape(fill="#dbe4ee", stroke="#ffffff", strokeWidth=0.3)
+    pts = (
+        alt.Chart(d)
+        .mark_circle(opacity=0.78, color="#d62728", stroke="#7c1719", strokeWidth=0.6)
+        .encode(
+            longitude="lon:Q",
+            latitude="lat:Q",
+            size=alt.Size(f"{value_name}:Q", scale=alt.Scale(range=[25, 1400]), title=value_name),
+            tooltip=[alt.Tooltip("base:N", title="Base"), alt.Tooltip(f"{value_name}:Q")],
+        )
+    )
+    return (
+        alt.layer(sphere, land, graticule, pts)
+        .project("naturalEarth1")
+        .properties(height=440)
+        .configure_view(stroke=None)
+    )
+
+
 with tab_query:
     st.header("Ask a data-driven question")
     query = st.text_input(
@@ -388,23 +429,23 @@ with tab_profile:
                     st.markdown("**Year-over-year**")
                     st.altair_chart(_bar(profile["year_histogram"], "Records", "Year"), use_container_width=True)
 
-            if profile.get("base_geo"):
-                st.markdown("**Where — base map** (bubble size ∝ records at that base)")
-                gdf = pd.DataFrame(profile["base_geo"])
-                mx = max(gdf["count"].max(), 1)
-                # st.map size is in metres; sqrt so bubble *area* ~ count
-                gdf["size"] = (gdf["count"] / mx) ** 0.5 * 70000 + 12000
-                try:
-                    st.map(gdf, latitude="lat", longitude="lon", size="size", color="#d62728")
-                except TypeError:
-                    # older Streamlit: auto-detects lat/lon columns, no size/color
-                    st.map(gdf.rename(columns={"lat": "latitude", "lon": "longitude"}))
+            st.markdown("**Where**")
+            wmap = _world_map(profile.get("base_geo", []))
+            if wmap is not None:
+                st.altair_chart(wmap, use_container_width=True)
                 cov = profile.get("base_geo_coverage")
                 if cov and cov[1]:
-                    st.caption(f"{cov[0]:,} of {cov[1]:,} records ({100.0 * cov[0] / cov[1]:.0f}%) at geolocated bases.")
-
+                    st.caption(
+                        f"Bubble size ∝ records at that base · {cov[0]:,} of {cov[1]:,} "
+                        f"records ({100.0 * cov[0] / cov[1]:.0f}%) at geolocated bases."
+                    )
+            elif profile["base_distribution"]:
+                # Couldn't geolocate any base — surface the names so the lookup can be extended.
+                st.info(
+                    "No bases could be geolocated for this WUC. Base names in the data: "
+                    + ", ".join(list(profile["base_distribution"].keys()))
+                )
             if profile["base_distribution"]:
-                st.markdown("**Where — by base**")
                 st.altair_chart(_hbar(profile["base_distribution"], "Records", "Base"), use_container_width=True)
 
             c_life, c_phase = st.columns(2)
