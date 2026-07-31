@@ -20,7 +20,18 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 # Configurable model path — point at the local hierarchical checkpoint on the
 # GPU box: export WUC_MODEL_PATH=./wuc-model-hier
-MODEL_PATH = os.environ.get("WUC_MODEL_PATH", "jonday/wuc-model")
+MODEL_PATH = os.environ.get("WUC_MODEL_PATH")
+if not MODEL_PATH:
+    # Previously this defaulted to "jonday/wuc-model" — a different checkpoint
+    # with a different label space (1727 vs 1251 classes) whose config carries
+    # only HF's placeholder LABEL_0..LABEL_N in id2label. It loaded without
+    # complaint and returned strings like "LABEL_847" as WUCs, or plausible
+    # wrong codes. Failing loudly beats serving the wrong model silently.
+    raise RuntimeError(
+        "WUC_MODEL_PATH is not set. Point it at the deployed checkpoint:\n"
+        "    export WUC_MODEL_PATH=./wuc-model-hier\n"
+        "Set it explicitly to a legacy model if that is genuinely what you want."
+    )
 
 # MUST match train_hierarchical.py / train_fresh.py MAX_LEN. Without an
 # explicit max_length the tokenizer falls back to tokenizer.model_max_length
@@ -30,6 +41,10 @@ MAX_LEN = 128
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+# Streamlit launches without touching the device, so inference silently ran on
+# CPU. _model_device() below keeps input tensors on whatever device the model
+# actually lives on, so this is purely a speed fix — predictions are identical.
+model.to("cuda" if torch.cuda.is_available() else "cpu")
 model.eval()
 
 # Build the index→WUC map. Prefer model.config (modern checkpoints have
@@ -139,9 +154,22 @@ def build_input_text(
     is uppercased before joining with " [SEP] ", because the training text is
     maintenance-report style (all caps, terse, technical). Returns a single
     string.
+
+    Values are coerced with str() rather than guarded by isinstance(str),
+    matching prepare_data.py's `if pd.notna(v) and str(v).strip()`. The old
+    isinstance guard was fine for Streamlit — widgets always return str — but
+    silently DROPPED short code columns like How Mal and Action Taken when a
+    caller passed them from a pandas frame that parsed them as numeric,
+    building shorter text than training used.
     """
     parts = []
     for value in (discrepancy, corrective_action, wce_narrative, how_mal, action_taken):
-        if isinstance(value, str) and value.strip():
-            parts.append(value.strip().upper())
+        if value is None:
+            continue
+        text = str(value).strip()
+        # "nan" is what str() makes of a pandas NaN; prepare_data.py excluded
+        # those via pd.notna(). A literal NAN write-up is not a real WUC input.
+        if not text or text.lower() == "nan":
+            continue
+        parts.append(text.upper())
     return " [SEP] ".join(parts)
