@@ -61,6 +61,40 @@ NORMALIZE_MAP = {
     "Corrective Action": "corrective_action_normalized",
 }
 
+DATE_COLUMNS = ["Start Date", "Stop Date"]
+
+
+def _parse_dates(series: pd.Series) -> pd.Series:
+    """Parse a date column that the raw extracts store as a NUMBER.
+
+    `FinalData.csv` shipped pre-formatted dates. The raw extracts do not, and
+    `pd.to_datetime` on an integer column interprets it as *nanoseconds since
+    epoch* — so every value lands within a fraction of a second of 1970-01-01,
+    all in January. That silently empties every date filter in Tab 2
+    (sum_utils.py:180 coerces, so unparseable becomes NaT and every
+    `NaT >= start_date` is False) and flattens Tab 3's date_range,
+    month_histogram, year_histogram and calendar heatmap.
+
+    Detects the encoding rather than assuming it, so this keeps working if a
+    future extract arrives in a different format.
+    """
+    numeric = pd.to_numeric(series, errors="coerce")
+    valid = numeric.dropna()
+
+    if len(valid):
+        # YYYYMMDD integers, e.g. 20240115
+        if valid.between(19000101, 21001231).mean() > 0.9:
+            return pd.to_datetime(
+                numeric.astype("Int64").astype(str), format="%Y%m%d", errors="coerce"
+            )
+        # Excel serial days since the 1900 epoch (offset by its leap-year bug)
+        if valid.between(1, 80000).mean() > 0.9:
+            return pd.to_datetime(
+                numeric, unit="D", origin="1899-12-30", errors="coerce"
+            )
+
+    return pd.to_datetime(series, errors="coerce")
+
 
 def _normalize(series: pd.Series) -> pd.Series:
     """Collapse trivial write-up variants so top-N phrase counts group properly.
@@ -112,6 +146,29 @@ def main() -> int:
             merged[dest] = _normalize(merged[src])
             print(f"Generated {dest}")
 
+    print("\nDates (written as ISO YYYY-MM-DD):")
+    date_ok = True
+    for col in DATE_COLUMNS:
+        if col not in merged.columns:
+            continue
+        raw_dtype = merged[col].dtype
+        parsed = _parse_dates(merged[col])
+        pct = 100.0 * parsed.notna().mean() if len(parsed) else 0.0
+        merged[col] = parsed.dt.strftime("%Y-%m-%d")
+        lo = parsed.min()
+        hi = parsed.max()
+        span = f"{lo:%Y-%m-%d} -> {hi:%Y-%m-%d}" if parsed.notna().any() else "none parsed"
+        flag = "OK     " if pct > 95 else "WARN   "
+        print(f"  {flag} {col:<12} from {str(raw_dtype):<9} {pct:5.1f}% parsed   {span}")
+        if pct <= 95:
+            date_ok = False
+        # A column that parses fine but lands in 1970 is the integer-as-
+        # nanoseconds failure; catch it here rather than in the UI.
+        if parsed.notna().any() and hi.year < 1980:
+            print(f"  ERROR  {col} parsed entirely before 1980 — epoch misread",
+                  file=sys.stderr)
+            date_ok = False
+
     print("\nProfile-critical columns:")
     missing = []
     for col in PROFILE_COLUMNS:
@@ -131,6 +188,11 @@ def main() -> int:
     if missing:
         print(f"\nWARNING: {len(missing)} profile column(s) still missing: "
               f"{missing}", file=sys.stderr)
+        return 1
+    if not date_ok:
+        print("\nWARNING: date parsing did not look clean — Tab 2 filters and "
+              "Tab 3 histograms depend on it. Check the samples above.",
+              file=sys.stderr)
         return 1
 
     print("\nRestart Streamlit to pick it up. Tab 3 should now populate "
