@@ -126,6 +126,14 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--top-k", type=int, default=3)
     ap.add_argument("--limit", type=int, default=None, help="only the first N rows")
+    ap.add_argument("--sample", type=int, default=None, metavar="N",
+                    help="random sample of N rows (seeded). Prefer this over "
+                         "--limit for anything you intend to quote — --limit "
+                         "takes the head of the file, which is not a sample")
+    ap.add_argument("--exclude-seen", nargs="*", default=None, metavar="PARQUET",
+                    help="drop rows the model was trained on, matched on the "
+                         "built input text. Bare flag uses "
+                         "data_splits/train.parquet + val.parquet")
     ap.add_argument("--truth-col", default="Corrected WUC",
                     help="ground-truth column for scoring; skipped if absent")
     ap.add_argument("--worksheet", type=int, default=0, metavar="N",
@@ -145,9 +153,6 @@ def main() -> int:
         print(f"ERROR: no 'Discrepancy' column in {in_path.name}. "
               f"Found: {list(df.columns)[:10]}...", file=sys.stderr)
         return 1
-    if args.limit:
-        df = df.head(args.limit).copy()
-
     present = [c for c in TEXT_FIELDS if c in df.columns]
     absent = [c for c in TEXT_FIELDS if c not in df.columns]
     print(f"Loaded {len(df):,} rows from {in_path.name}")
@@ -161,7 +166,45 @@ def main() -> int:
     print(f"Model: {os.environ['WUC_MODEL_PATH']} on {device} "
           f"({len(index_to_wuc):,} classes)")
 
-    texts = df.apply(build_text, axis=1).tolist()
+    # Build input text for EVERY row before subsetting — the training-overlap
+    # anti-join below matches on it.
+    df["model_input"] = df.apply(build_text, axis=1)
+
+    if args.exclude_seen is not None:
+        split_paths = args.exclude_seen or [
+            "data_splits/train.parquet", "data_splits/val.parquet"
+        ]
+        seen: set[str] = set()
+        for sp in split_paths:
+            p = Path(sp)
+            if not p.is_absolute():
+                p = REPO_ROOT / p
+            if not p.exists():
+                print(f"WARNING: {p} not found — cannot exclude it", file=sys.stderr)
+                continue
+            split = pd.read_parquet(p, columns=["text"])
+            seen.update(split["text"].astype(str))
+            print(f"Excluding {len(split):,} rows seen in {p.name}")
+        if seen:
+            before = len(df)
+            df = df[~df["model_input"].isin(seen)]
+            print(f"Training overlap removed: {before:,} -> {len(df):,} "
+                  f"({before - len(df):,} dropped)")
+
+    if args.sample:
+        df = df.sample(min(args.sample, len(df)), random_state=SEED)
+        print(f"Random sample (seed {SEED}): {len(df):,} rows")
+    elif args.limit:
+        df = df.head(args.limit)
+        print(f"NOTE: --limit takes the FIRST {args.limit:,} rows, not a "
+              f"sample. Do not quote accuracy from this; use --sample.")
+    df = df.reset_index(drop=True)
+
+    if df.empty:
+        print("ERROR: no rows left to predict", file=sys.stderr)
+        return 1
+
+    texts = df["model_input"].tolist()
     empty = sum(1 for t in texts if not t.strip())
     if empty:
         print(f"WARNING: {empty:,} rows produced empty input text")
@@ -222,7 +265,9 @@ def main() -> int:
     if args.worksheet:
         keep = [c for c in present] + [
             f"pred_wuc_{i + 1}" for i in range(args.top_k)
-        ] + ["confidence_1", "pred_definition_1", "confidence_band"]
+        ] + ["confidence_1", "pred_definition_1", "confidence_band", "model_input"]
+        if args.truth_col in out.columns:
+            keep.append(args.truth_col)  # the QC-pipeline label, to compare against
         keep = [c for c in keep if c in out.columns]
 
         chunks = []
