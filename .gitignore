@@ -21,3 +21,7 @@ wuc-model-hier/
 .idea/
 .DS_Store
 Thumbs.db
+data/
+*.log
+.ipynb_checkpoints/
+nov_24_wuc_predict.csv
