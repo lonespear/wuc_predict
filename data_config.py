@@ -1,7 +1,12 @@
 from pathlib import Path
 import os
 
+# app_data.csv (built by training/build_app_data.py from the data/ extracts)
+# is preferred: FinalData.csv is a stale artifact missing Base, Flight Hours,
+# JCN, When Discovered Code and Type Maint Code, which wuc_profile.py silently
+# skips — leaving six profile sections empty. Delete app_data.csv to roll back.
 DEFAULT_DATA_PATHS = [
+    Path(__file__).parent / "app_data.csv",
     Path(__file__).parent / "FinalData.csv",
     Path(__file__).parent.parent / "kc135" / "kc_135.csv",
 ]
