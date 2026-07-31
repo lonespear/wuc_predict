@@ -44,11 +44,33 @@ def _top_keywords(series: pd.Series, n: int = 10) -> list[tuple[str, int]]:
     return counter.most_common(n)
 
 
-def _flight_hour_buckets(series: pd.Series) -> dict[str, int]:
+def _flight_hour_buckets(
+    series: pd.Series, reference: pd.Series | None = None
+) -> dict[str, int]:
+    """Bucket airframe flight hours into quartiles.
+
+    `reference` supplies the distribution the quartile edges are derived from
+    — pass the FULL dataset, not the WUC subset. Deriving edges from the
+    subset and then binning that same subset is tautological: each bucket
+    gets ~25% by construction, so every WUC looks age-neutral and genuine
+    skew toward high- or low-time airframes is mathematically invisible.
+
+    With fleet-wide edges, departure from 25% is the signal.
+    """
     hrs = pd.to_numeric(series, errors="coerce").dropna()
     if hrs.empty:
         return {}
-    q = hrs.quantile([0.25, 0.5, 0.75])
+
+    basis = hrs if reference is None else pd.to_numeric(reference, errors="coerce").dropna()
+    if basis.empty:
+        basis = hrs
+    q = basis.quantile([0.25, 0.5, 0.75])
+    # Degenerate edges (heavy ties) would make pd.cut raise; fall back to the
+    # subset's own distribution rather than dropping the section entirely.
+    if len({q[0.25], q[0.5], q[0.75]}) < 3:
+        q = hrs.quantile([0.25, 0.5, 0.75])
+        if len({q[0.25], q[0.5], q[0.75]}) < 3:
+            return {}
     buckets = pd.cut(
         hrs,
         bins=[-1, q[0.25], q[0.5], q[0.75], float("inf")],
@@ -209,7 +231,12 @@ def build_profile(
             profile["year_month_matrix"] = mat.to_dict("records")
 
     if "Flight Hours" in subset.columns:
-        profile["flight_hour_buckets"] = _flight_hour_buckets(subset["Flight Hours"])
+        # Quartile edges come from the whole fleet so departure from 25% means
+        # something; see _flight_hour_buckets.
+        profile["flight_hour_buckets"] = _flight_hour_buckets(
+            subset["Flight Hours"],
+            reference=df["Flight Hours"] if "Flight Hours" in df.columns else None,
+        )
 
     if "When Discovered Code" in subset.columns:
         profile["when_discovered_phase"] = _phase_from_code(
