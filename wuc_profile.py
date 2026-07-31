@@ -74,6 +74,24 @@ def _month_histogram(df: pd.DataFrame) -> dict[str, int]:
     return {}
 
 
+def _year_histogram(df: pd.DataFrame) -> dict[int, int]:
+    """Records per calendar year.
+
+    Mirrors _month_histogram: prefer a pre-computed YEAR column, fall back to
+    deriving it from Start Date. The YEAR/MONTH columns only exist in the
+    richer of the two source extracts, so the schema intersection in
+    build_app_data.py drops them — without the fallback this returned {} and
+    the year-over-year chart silently never rendered.
+    """
+    if "YEAR" in df.columns and df["YEAR"].notna().any():
+        return df["YEAR"].dropna().astype(int).value_counts().sort_index().to_dict()
+    if "Start Date" in df.columns:
+        dates = pd.to_datetime(df["Start Date"], errors="coerce").dropna()
+        if not dates.empty:
+            return dates.dt.year.value_counts().sort_index().to_dict()
+    return {}
+
+
 def _phase_from_code(series: pd.Series, code_map: dict[str, str]) -> dict[str, int]:
     if series.empty:
         return {}
@@ -176,10 +194,7 @@ def build_profile(
 
     profile["month_histogram"] = _month_histogram(subset)
 
-    if "YEAR" in subset.columns:
-        profile["year_histogram"] = (
-            subset["YEAR"].dropna().astype(int).value_counts().sort_index().to_dict()
-        )
+    profile["year_histogram"] = _year_histogram(subset)
 
     # Year x month matrix for a calendar heatmap (records: {year, month, count}).
     if "Start Date" in subset.columns:
