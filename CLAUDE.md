@@ -57,6 +57,56 @@ geolocated, all seven sections populated.
 
 ---
 
+## ⚠️ Pooling mismatch — found and fixed 2026-07-31
+
+**Tab 1 served degraded predictions from `adf6d9f` (2026-05) until 2026-07-31.**
+
+`train_hierarchical.py::HierarchicalModel._pooled()` pools by hand:
+
+```python
+cls = encoder_out.last_hidden_state[:, 0, :]   # CLS
+return self.wuc_model.head(cls)
+```
+
+but saved through `wuc_model.save_pretrained()`, and the config inherited
+`classifier_pooling="mean"` from the base checkpoint. So every consumer going
+through `AutoModelForSequenceClassification` — `model_loader.py`,
+`batch_predict.py`, `compare_models.py`, **and the live app** — mean-pooled
+across tokens before `head`, feeding the classifier a representation it never
+trained on.
+
+Nothing errored. Predictions stayed plausible. Confidences looked reasonable.
+
+Measured on the held-out test split (`training/check_pooling.py`):
+
+| classifier_pooling | top-1 |
+|---|---|
+| `mean` (what was served) | 0.7557 |
+| `cls` (how it was trained) | **0.8973** |
+
+Full test set after patching `wuc-model-hier/config.json` to `"cls"`:
+**top-1 0.9032, top-3 0.9781** — matching the originally reported 0.903.
+
+Confidence distribution also changed completely: the ≥70% band went from
+4,596 to **14,500** of 15,636 rows. Tab 1's low-confidence warnings were
+largely an artifact of the wrong pooled vector.
+
+**Consequences still outstanding:**
+- **`compare_models.py` must be re-run.** The v2-vs-hierarchical comparison
+  that justified deploying `wuc-model-hier` was measured through the broken
+  path. `wuc-model-v2` came from `train_fresh.py`, which uses the standard
+  forward, so it was pooled consistently — meaning the comparison was not
+  apples-to-apples.
+- The smoke-test figure below (`12AAN` at 76.8%) was measured under the
+  defect and will now read differently.
+- Backup of the original config is at `wuc-model-hier/config.json.bak`.
+
+**If you ever train a model with a custom `forward`, verify the saved config
+describes what the forward actually does.** `save_pretrained()` persists the
+config, not your Python.
+
+---
+
 ## Trained models on disk (school GPU box)
 
 | Model | Test acc | Macro F1 | Test loss | Status |
@@ -278,6 +328,15 @@ the data.
 
 ## Gotchas (lessons learned)
 
+- **A custom `forward()` does not change the saved config.** The pooling bug
+  above cost 14 points of top-1 accuracy in production for three months with
+  no error, no log line, and plausible-looking output. Any time training
+  hand-rolls the forward pass, assert that the config round-trips: load the
+  saved checkpoint with `AutoModel...` and confirm it scores what training
+  reported. `training/check_pooling.py` does exactly this for pooling.
+- **Trust held-out re-measurement over documented metrics.** The 0.903 in
+  this file was correct and the deployment was still broken — training-time
+  numbers say nothing about the serving path.
 - **The container gets rebuilt under you.** As of 2026-07-31 the image moved
   Python 3.10 → 3.12, orphaning every `pip install --user` package in
   `~/.local/lib/python3.10`. Symptom: `ModuleNotFoundError: No module named

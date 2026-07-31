@@ -154,9 +154,28 @@ Harmless in Streamlit (widgets always return `str`). Coerce explicitly in
 **Goal:** replace "0.903 accuracy on a test set drawn from the same QC pipeline
 as training" with "N% top-1 / N% top-3 on hand-checked production records."
 
+### Already done 2026-07-31
+
+`training/batch_predict.py` exists and works: batched CUDA inference,
+`--exclude-seen` to drop training overlap, `--sample` for seeded random
+draws, `--text-col` + parquet input, in-label-space reporting, `--worksheet`.
+
+**Building it found a 14-point production bug.** Held-out scoring disagreed
+with the documented 0.903, and chasing that disagreement — through
+contamination, then truncation, then label coverage — ended at a
+train/serve pooling mismatch. See CLAUDE.md. Verified held-out numbers on
+the QC-labeled test split are now **top-1 0.9032 / top-3 0.9781**.
+
+That is the argument for this phase in one sentence: none of the ten
+follow-ups this project started with would have surfaced it.
+
+**Still outstanding: re-run `compare_models.py`.** The v2-vs-hierarchical
+comparison behind the deployment decision was measured through the broken
+pooling path.
+
 | # | Task | Est. |
 |---|---|---|
-| 1.1 | `batch_predict.py` — CSV in, top-3 + confidence out. Runs on the box, CUDA, uses `build_input_text()` so preprocessing matches training exactly. | 1 session |
+| 1.1 | ~~`batch_predict.py`~~ ✅ done — see above | — |
 | 1.2 | Sample 100 records stratified across confidence bands (not random — deliberately oversample the 30-70% band, that's where the truth lives). | 30 min |
 | 1.3 | Hand-check the 100 against the WUC dictionary. Mark top-1 correct / top-3 correct / wrong. | 2-3 sessions, and this is the tedious one |
 | 1.4 | Write the number into `CLAUDE.md` and `README.md`. | 15 min |
