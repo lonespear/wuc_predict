@@ -1,8 +1,10 @@
 streamlit
+altair
 torch
 transformers
 huggingface-hub
 pandas
+numpy
 matplotlib
 ollama
 anthropic
