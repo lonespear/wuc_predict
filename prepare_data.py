@@ -24,8 +24,8 @@ from sklearn.model_selection import train_test_split
 # =============================================================================
 # Config
 # =============================================================================
-PATH_A = "FinalData.csv"
-PATH_B = "new_data.csv"            # rename to your second file
+PATH_A = "data/data1.csv"
+PATH_B = "data/data2.csv"            # rename to your second file
 OUT_DIR = Path("data_splits")
 
 TEXT_FIELDS = [
