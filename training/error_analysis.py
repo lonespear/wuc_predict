@@ -53,6 +53,11 @@ def main() -> int:
                     help="how many high-confidence disagreements to write out")
     ap.add_argument("--min-confidence", type=float, default=90.0,
                     help="confidence floor for the adjudication list")
+    ap.add_argument("--include-unanswerable", action="store_true",
+                    help="keep records whose true WUC is outside the model's "
+                         "label space. They are guaranteed misses and skew the "
+                         "error breakdown toward 'different system'. Excluded "
+                         "by default.")
     args = ap.parse_args()
 
     path = Path(args.input)
@@ -69,6 +74,34 @@ def main() -> int:
             return 1
 
     df = df[df[args.truth_col].notna()].copy()
+
+    # Records whose true WUC never entered the label map are guaranteed
+    # misses — including them makes the model look like it misreads text when
+    # it simply had no way to express the answer. Read id2label straight from
+    # the checkpoint config; no model load needed.
+    if not args.include_unanswerable:
+        import json
+        import os
+        cfg_path = Path(os.environ.get("WUC_MODEL_PATH", "./wuc-model-hier"))
+        if not cfg_path.is_absolute():
+            cfg_path = REPO_ROOT / cfg_path
+        cfg_file = cfg_path / "config.json"
+        if cfg_file.exists():
+            id2label = json.loads(cfg_file.read_text()).get("id2label") or {}
+            space = {str(v).strip().upper() for v in id2label.values()}
+            if space:
+                t = df[args.truth_col].astype(str).str.strip().str.upper()
+                keep = t.isin(space)
+                dropped = int((~keep).sum())
+                df = df[keep].copy()
+                print(f"Excluded {dropped:,} records whose true WUC is outside "
+                      f"the model's {len(space):,}-class label space.")
+                print("(Guaranteed misses — a coverage problem, not an accuracy "
+                      "one. Use --include-unanswerable to keep them.)\n")
+        else:
+            print(f"WARNING: {cfg_file} not found — cannot filter unanswerable "
+                  f"records\n", file=sys.stderr)
+
     truth = df[args.truth_col].astype(str).str.strip().str.upper()
     pred = df["pred_wuc_1"].astype(str).str.strip().str.upper()
 
