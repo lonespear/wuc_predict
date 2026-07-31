@@ -81,6 +81,15 @@ class HierarchicalModel(nn.Module):
             num_labels=n_wucs,
             id2label=id2label,
             label2id=label2id,
+            # MUST match _pooled() below, which takes last_hidden_state[:, 0, :].
+            # Without this the saved config inherits the base checkpoint's
+            # "mean", and every consumer that goes through
+            # AutoModelForSequenceClassification (model_loader, batch_predict,
+            # compare_models, Tab 1) mean-pools across tokens before `head` —
+            # handing the classifier a representation it never trained on.
+            # Measured cost when this was wrong: 0.8973 -> 0.7557 top-1,
+            # silently, with no error anywhere.
+            classifier_pooling="cls",
         )
         hidden = self.wuc_model.config.hidden_size
         # Auxiliary heads operate on the post-prediction-head pooled representation
