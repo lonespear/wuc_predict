@@ -177,8 +177,36 @@ pooling path.
 |---|---|---|
 | 1.1 | ~~`batch_predict.py`~~ ✅ done — see above | — |
 | 1.2 | ~~Stratified sample~~ ✅ done — `labeling_worksheet.csv`, 102 records, 34 per band | — |
-| 1.3 | Hand-check the 100 against the WUC dictionary. Mark top-1 correct / top-3 correct / wrong. | 2-3 sessions, and this is the tedious one |
+| 1.3 | **REPLANNED 2026-07-31** — see below. | — |
 | 1.4 | Write the number into `CLAUDE.md` and `README.md`. | 15 min |
+
+### Why 1.3 was replanned
+
+The original plan — hand-label 102 records — assumed a KC-135 maintainer was
+doing it. Neither the project owner nor Claude is one. Reading a write-up and
+independently naming the correct WUC is expert judgment; guessing at it would
+produce an authoritative-looking number backed by nothing, which is exactly
+how `0.903` survived three months in `CLAUDE.md` while the deployed model was
+serving `0.7557`.
+
+**A wrong number with a confident provenance is worse than an honest gap.**
+
+Replaced with two tracks:
+
+| # | Task | Who | Est. |
+|---|---|---|---|
+| 1.3a | `training/error_analysis.py` — exact / subsystem / system agreement from the WUC code hierarchy, near-miss rate, top confusion pairs. Tells you the *character* of the errors. | no expertise needed | 10 min |
+| 1.3b | `adjudication_worksheet.csv` — the ~25 highest-confidence disagreements, where either the model or the QC label must be wrong. Expert marks MODEL / LABEL / NEITHER. | needs a maintainer | ~30 min of their time |
+
+A stratified sample is the wrong instrument when the expert is the scarce
+resource. High-confidence disagreements are where the information is: at 99%
+confidence against a conflicting label, one side is definitively wrong, and
+**if it is the label, every accuracy figure in this repo is understated.**
+
+If no maintainer is ever available, 1.3b stays open and the honest claim is
+"0.9162 held-out against QC-pipeline labels, which were produced by the same
+process that generated the training targets." State the limitation; do not
+invent a number to close the gap.
 
 **Exit criteria:** a defensible accuracy figure and the labeled CSV that backs
 it. Once 1.4 is written down, Phase 1 is closed — do not reopen it to "get a
