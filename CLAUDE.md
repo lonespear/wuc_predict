@@ -147,13 +147,28 @@ that's an open follow-up, not done yet.
 |---|---|
 | Discrepancy input | `PILOT SEAT BELT FRAYED, MISSING STITCHING` |
 | Corrective action | `INSPECTED PILOT SEAT BELT, REPLACED IAW TM 1C-135-06` |
-| Top-1 prediction | **`12AAN — FUSELAGE COMPARTMENTS / Safety Belt`** at 76.8% |
+| Top-1 prediction | **`12AAN — FUSELAGE COMPARTMENTS / Safety Belt`** at **99.8%** |
+| Runners-up | `12AGA` Safety Belts (TCI) 0.1%, `12AAJ` Inertia Reel Assembly 0.0% |
 
-`12AAN` is literally "Safety Belt" in the WUC dictionary. **Correct answer.**
-The lower-vs-old confidence is a calibration improvement, not a regression
-(class-weighted CE + hierarchical regularization deliberately damp
-overconfidence). See `compare_models.py` for empirical head-to-head if anyone
-doubts it.
+`12AAN` is literally "Safety Belt" in the WUC dictionary. **Correct answer**,
+with semantically adjacent runners-up correctly ranked far below.
+
+### A warning about how this entry used to read
+
+Before 2026-07-31 this smoke test returned **76.8%**, and this file explained
+the lower confidence as *"a calibration improvement, not a regression —
+class-weighted CE + hierarchical regularization deliberately damp
+overconfidence."*
+
+That explanation was wrong. It was a **plausible, technically literate story
+invented to account for a bug's symptom**, and it stood for three months
+because it sounded right and nothing contradicted it. The real cause was the
+pooling mismatch above.
+
+The tell was available the whole time: the story explained *why the number
+was low* but nobody checked whether the number *should* be low. When a
+metric moves and you can immediately explain why, that is the moment to
+measure, not to write the explanation down.
 
 ---
 
