@@ -168,10 +168,57 @@ Two separate things, two separate fixes:
 The model rarely claims uncertainty — which is what makes the hand-labeled
 check of that band the number that actually matters.
 
-**Still pending: the hand-labeled result.** Everything above is scored
-against QC-pipeline labels, i.e. the same process that produced the training
-targets. `labeling_worksheet.csv` (102 records, 34 per confidence band) is
-the instrument for replacing it.
+### Error character (`training/error_analysis.py`, answerable rows only)
+
+| Granularity | Agreement |
+|---|---|
+| exact WUC | 0.9162 |
+| same subsystem (3 char) | 0.9688 |
+| same system (2 char) | **0.9831** |
+
+Of 1,330 disagreements:
+
+| Kind | n | share |
+|---|---|---|
+| same subsystem — near miss, e.g. left vs right of one component | 835 | 62.8% |
+| same system, different subsystem | 226 | 17.0% |
+| different system entirely | 269 | **20.2%** |
+
+**The model is not misreading maintenance text.** Only 269 records out of
+15,876 — 1.7% — are cross-system errors. Nearly two thirds of all mistakes
+are the final character of a code.
+
+### Relabeling candidates, not model bugs
+
+Top confusion pairs point at annotation convention rather than model failure:
+
+- **`72LA0 ↔ 72VA0`, 13 one way and 12 the other.** Bidirectional confusion
+  is the signature of two codes used interchangeably by different bases. No
+  model can separate codes the source data uses inconsistently.
+- **Generic-rollup vs specific variant:** `624A0→62400` (21), `637A0→63700`,
+  `65DAA→65DA0`, `51FB0→51F00`, `72HM0→72H00`. When annotators use both a
+  rollup code and a specific one for the same condition, exact-match scoring
+  punishes a model that is substantively right.
+- **`45211→42211` (9)** is the only cross-system pair in the top 15 and
+  differs by one character in position 2 — likely a source data-entry
+  transposition.
+
+**So 0.9162 is a floor.** A real slice of the gap is labeling convention.
+
+### The one open gap — stated, not papered over
+
+Everything above is scored against QC-pipeline labels, produced by the same
+process that generated the training targets. It is not hand-verified.
+
+`adjudication_worksheet.csv` holds the 25 highest-confidence disagreements
+(of 450 at ≥90% confidence), where either the model or the label must be
+wrong. It needs a KC-135 maintainer, ~30 minutes. Until then the honest
+claim is:
+
+> **0.9162 top-1 / 0.9797 top-3 on held-out records, scored against
+> QC-pipeline labels. 98.31% system-level. Not independently hand-verified.**
+
+Do not invent a number to close that gap.
 
 ---
 

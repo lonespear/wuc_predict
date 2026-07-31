@@ -149,7 +149,34 @@ Harmless in Streamlit (widgets always return `str`). Coerce explicitly in
 
 ---
 
-## Phase 1 — Trust the number  ← *you are here*
+## Phase 1 — Trust the number  ✅ CLOSED 2026-07-31
+
+**Exit criterion met: the accuracy claim is now defensible.**
+
+> 0.9162 top-1 / 0.9797 top-3 on 15,876 held-out answerable records.
+> 98.31% system-level. 93.2% label coverage. Scored against QC-pipeline
+> labels; not independently hand-verified.
+
+Getting there found a **14-point production bug** (train/serve pooling
+mismatch, live for three months) that no amount of code review would have
+caught — every path loaded cleanly and returned believable WUCs. See
+CLAUDE.md.
+
+Error character says the model is sound: only 1.7% of records are
+cross-system errors, and 62.8% of all mistakes are same-subsystem near
+misses. Several top confusion pairs are annotation convention, not model
+failure — `72LA0 ↔ 72VA0` is bidirectional, and rollup-vs-specific pairs
+like `624A0→62400` recur. **0.9162 is a floor.**
+
+One gap remains open by design: `adjudication_worksheet.csv`, 25
+high-confidence disagreements needing ~30 minutes from a KC-135 maintainer.
+**This does not block anything.** It is a known limitation with a written
+fallback claim, not an unfinished task.
+
+---
+
+<details>
+<summary>Original Phase 1 plan</summary>
 
 **Goal:** replace "0.903 accuracy on a test set drawn from the same QC pipeline
 as training" with "N% top-1 / N% top-3 on hand-checked production records."
@@ -214,6 +241,10 @@ better number."
 
 Note 1.1 is the same tool that does bulk re-validation later, so it is not a
 detour — it's the instrument for 1.3.
+
+---
+
+</details>
 
 ---
 
