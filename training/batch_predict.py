@@ -130,7 +130,13 @@ def predict_batches(texts: list[str], batch_size: int, top_k: int,
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--input", required=True, help="CSV with a Discrepancy column")
+    ap.add_argument("--input", required=True,
+                    help="CSV or .parquet with a Discrepancy column")
+    ap.add_argument("--text-col", default=None, metavar="COL",
+                    help="use an existing pre-built input column instead of "
+                         "rebuilding from the five text fields. Use "
+                         "--text-col text on data_splits/*.parquet to "
+                         "reproduce the training-time eval exactly")
     ap.add_argument("--output", default=None, help="default: <input>_predictions.csv")
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--top-k", type=int, default=3)
@@ -161,8 +167,17 @@ def main() -> int:
         print(f"ERROR: {in_path} not found", file=sys.stderr)
         return 1
 
-    df = pd.read_csv(in_path, low_memory=False)
-    if "Discrepancy" not in df.columns:
+    if in_path.suffix.lower() == ".parquet":
+        df = pd.read_parquet(in_path)
+    else:
+        df = pd.read_csv(in_path, low_memory=False)
+
+    if args.text_col:
+        if args.text_col not in df.columns:
+            print(f"ERROR: --text-col '{args.text_col}' not in {in_path.name}. "
+                  f"Found: {list(df.columns)[:12]}...", file=sys.stderr)
+            return 1
+    elif "Discrepancy" not in df.columns:
         print(f"ERROR: no 'Discrepancy' column in {in_path.name}. "
               f"Found: {list(df.columns)[:10]}...", file=sys.stderr)
         return 1
@@ -181,7 +196,12 @@ def main() -> int:
 
     # Build input text for EVERY row before subsetting — the training-overlap
     # anti-join below matches on it.
-    df["model_input"] = df.apply(build_text, axis=1)
+    if args.text_col:
+        df["model_input"] = df[args.text_col].astype(str)
+        print(f"Using pre-built text from column '{args.text_col}' "
+              f"(not rebuilding from the five fields)")
+    else:
+        df["model_input"] = df.apply(build_text, axis=1)
 
     if args.exclude_seen is not None:
         split_paths = args.exclude_seen or [
