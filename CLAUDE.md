@@ -134,6 +134,47 @@ honest.
 
 ---
 
+## Verified held-out performance (2026-07-31)
+
+Measured with `training/batch_predict.py --exclude-seen`, on 17,041 records
+from `app_data.csv` with every train/val row removed by exact input-text
+match. **These are the numbers to quote**, not the training-time figures.
+
+| Metric | Value | Meaning |
+|---|---|---|
+| top-1, answerable rows | **0.9162** | model quality |
+| top-3, answerable rows | **0.9797** | with the top-3 UI, the right code is nearly always on screen |
+| top-1, all rows | **0.8536** | end-to-end, what a user experiences |
+| label coverage | **93.2%** | share of real WUCs the model can emit at all |
+
+Calibration on answerable rows:
+
+| Band | n | top-1 |
+|---|---|---|
+| ≥70% | 14,795 | 0.9463 |
+| 30-70% | 980 | 0.5245 |
+| <30% | 101 | 0.3069 |
+
+Two separate things, two separate fixes:
+
+- **Accuracy** is model quality. 0.9162 held-out.
+- **Coverage** is a label-map decision. 6.8% of real records carry a WUC
+  that `prepare_data.py`'s `MIN_PER_CLASS = 5` filter kept out of the label
+  space entirely — structurally impossible to predict, no matter how good
+  the model gets. Lower the threshold, or document the gap. Do not conflate
+  it with accuracy.
+
+87% of records land in the ≥70% band, and that band is honest at 0.9463.
+The model rarely claims uncertainty — which is what makes the hand-labeled
+check of that band the number that actually matters.
+
+**Still pending: the hand-labeled result.** Everything above is scored
+against QC-pipeline labels, i.e. the same process that produced the training
+targets. `labeling_worksheet.csv` (102 records, 34 per confidence band) is
+the instrument for replacing it.
+
+---
+
 ## Critical workflow decision
 
 **The model is deployed for the post-fix verification workflow** — maintainer

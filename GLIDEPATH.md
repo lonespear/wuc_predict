@@ -176,7 +176,7 @@ pooling path.
 | # | Task | Est. |
 |---|---|---|
 | 1.1 | ~~`batch_predict.py`~~ ✅ done — see above | — |
-| 1.2 | Sample 100 records stratified across confidence bands (not random — deliberately oversample the 30-70% band, that's where the truth lives). | 30 min |
+| 1.2 | ~~Stratified sample~~ ✅ done — `labeling_worksheet.csv`, 102 records, 34 per band | — |
 | 1.3 | Hand-check the 100 against the WUC dictionary. Mark top-1 correct / top-3 correct / wrong. | 2-3 sessions, and this is the tedious one |
 | 1.4 | Write the number into `CLAUDE.md` and `README.md`. | 15 min |
 
