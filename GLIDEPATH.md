@@ -54,9 +54,37 @@ scripts have no local imports, so they still run from repo root:
 
 ---
 
-## Phase 0 — The data source fix  ← *you are here*
+## Phase 0 — The data source fix  ✅ CLOSED 2026-07-31
 
-Found 2026-07-31. The app has been reading the wrong file for three months.
+Verified on `12AAN`: 171 records, 106 airframes, `base_geo_coverage` 171/171
+(100%), and all seven sections populated. `flight_hour_buckets` came back
+56/48/30/37 — a real skew toward lower-time airframes, not the forced-even
+result the old code produced.
+
+Four bugs fixed along the way, **three of them pre-existing rather than
+regressions** — they had simply been invisible while five sections around
+them were also empty:
+
+1. Data source pointed at stale `FinalData.csv` (below).
+2. `Start Date` arrives as an Excel serial; `pd.to_datetime` read it as
+   nanoseconds since epoch, so every date landed in Jan 1970 and every Tab 2
+   filter silently matched nothing.
+3. `year_histogram` only read a `YEAR` column with no `Start Date` fallback,
+   unlike `_month_histogram`. Empty since before the swap.
+4. `_flight_hour_buckets` derived quartile edges from the subset it was
+   binning — tautologically ~25% per bucket for every WUC.
+
+Also resolved: the box's container was rebuilt on Python 3.12, orphaning the
+3.10 user site-packages. Now on a `--system-site-packages` venv at
+`~/.venvs/wuc` that inherits the image's `torch 2.12.0+cu130`. See CLAUDE.md
+gotchas.
+
+---
+
+<details>
+<summary>Original Phase 0 analysis (kept for the reasoning)</summary>
+
+The app has been reading the wrong file for three months.
 
 `resolve_data_path()` resolves to `FinalData.csv` at repo root — a **stale
 artifact** that was an *input* to an earlier version of `prepare_data.py`
@@ -107,6 +135,8 @@ the Streamlit UI, which is the OOD case `1b3405e` was fixing.
 
 **Phase 1 is unblocked.**
 
+</details>
+
 ### Still to fix — silent field drop from pandas
 
 Training accepts any non-null via `str(v)`; `build_input_text()` requires
@@ -119,7 +149,7 @@ Harmless in Streamlit (widgets always return `str`). Coerce explicitly in
 
 ---
 
-## Phase 1 — Trust the number
+## Phase 1 — Trust the number  ← *you are here*
 
 **Goal:** replace "0.903 accuracy on a test set drawn from the same QC pipeline
 as training" with "N% top-1 / N% top-3 on hand-checked production records."
@@ -177,6 +207,8 @@ These are good ideas. That's exactly why they're dangerous right now.
 
 | Item | Un-park when |
 |---|---|
+| **Chart axis tick density** — the co-occurrence and Base bar charts render every 0.05 increment on small integer ranges, producing ~60 tick labels. One-line Altair fix (`tickMinStep=1`, `format='d'`). | Doing any other Tab 3 work — fold it in then, not before |
+| **Reconsider the sectioned `ANALYST_PROMPT`** reverted in `c42cd87` | It was reverted because Gemma kept writing "insufficient data" — which was true at the time. The data now exists, so the sectioned version may be strictly better. Revisit when Phase 1 is closed |
 | **Discrepancy-only model variant** (pre-fix live prediction) | Someone actually asks for pre-fix prediction. This is a **second model with its own training run, its own eval, and UI routing logic** — it is a v2 project, not a follow-up. Biggest single creep risk on the list. |
 | Prompt-style selector, Tab 3 (brief/engineering/executive) | A reader complains about the current narrative style |
 | Recommendations section in the analyst prompt | Same |

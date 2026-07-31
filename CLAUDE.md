@@ -16,7 +16,7 @@ cached; pushing may need GCM re-prompt as `lonespear`.
 
 ---
 
-## Status (2026-05-02)
+## Status (2026-07-31)
 
 **🚀 Shipped and live** at:
 ```
@@ -27,6 +27,33 @@ Currently running:
 - ModernBERT-large hierarchical fine-tune (`./wuc-model-hier`) for Tab 1
 - Gemma 4 (`gemma4:e4b`) via local Ollama for Tab 3
 - Streamlit pointed at `WUC_MODEL_PATH=./wuc-model-hier`
+- **Data: `app_data.csv`** (162,565 records, 2019-01-01 → 2026-03-31),
+  built by `training/build_app_data.py` from `data/data1.csv` +
+  `data/data2.csv`. NOT `FinalData.csv` — see below.
+
+**Read `GLIDEPATH.md` for what to work on next.** It holds the finish line
+and, more importantly, the parked list with un-park triggers.
+
+### Phase 0 closed 2026-07-31 — the app had been reading the wrong file
+
+`resolve_data_path()` resolved to `FinalData.csv`, a stale artifact that was
+an *input* to an earlier `prepare_data.py`. It had 20 columns and was data1
+only — missing `Base`, `Flight Hours`, `JCN`, `When Discovered Code`,
+`Type Maint Code`, **and all 35,060 of data2's records (27% of the data).**
+
+`wuc_profile.py` guards each column with `if "X" in df.columns`, so they were
+silently skipped. Six profile sections had been empty since the beginning:
+base_distribution, base_geo, flight_hour_buckets, cooccurring_wucs,
+when_discovered_phase, maint_type_phase.
+
+That explains two earlier dead ends: the Tab 3 map (bubbles key off `Base`,
+so four commits went into a map with nothing to plot) and the analyst-prompt
+"insufficient data" fight (the fields really were absent — the `c42cd87`
+revert masked a data bug). **With real data behind it, the sectioned prompt
+from `c42cd87` is worth reconsidering.**
+
+Verified working on `12AAN`: 171 records, 106 airframes, 100% of bases
+geolocated, all seven sections populated.
 
 ---
 
@@ -90,17 +117,26 @@ doubts it.
 | `llm_adapter.py` | `SummaryAdapter` Protocol + `NullAdapter`/`GemmaAdapter`/`ClaudeAdapter`. Shared `ANALYST_PROMPT`. |
 | `sum_utils.py` | NL-query parser + record analysis (Tab 2). |
 | `data_config.py` | Path resolution + WHEN_DISCOVERED / TYPE_MAINT code dicts. |
-| `prepare_data.py` | Merge raw extracts → train/val/test parquet splits. |
-| `train_fresh.py` | Fresh fine-tune (single classifier head). |
-| `train_continue.py` | Continue from existing checkpoint with reset optimizer. |
-| `train_hierarchical.py` | Joint system/subsystem/WUC fine-tune; **produces the shipped model**. |
-| `compare_models.py` | Head-to-head old vs new on test set (accuracy + calibration). |
-| `app.py` / `sum_app.py` | Legacy standalone apps; kept for reference, NOT used by main_app. |
+| `training/build_app_data.py` | **Builds `app_data.csv`** — merges the data/ extracts, parses Excel-serial dates, regenerates normalized text columns, reports profile-column coverage. |
+| `training/batch_predict.py` | Batched CUDA top-k inference. Bulk re-validation + `--worksheet N` writes the Phase 1 hand-labeling sheet. |
+| `training/prepare_data.py` | Merge raw extracts → train/val/test parquet splits. |
+| `training/train_fresh.py` | Fresh fine-tune (single classifier head). |
+| `training/train_continue.py` | Continue from existing checkpoint with reset optimizer. |
+| `training/train_hierarchical.py` | Joint system/subsystem/WUC fine-tune; **produces the shipped model**. |
+| `training/compare_models.py` | Head-to-head old vs new on test set (accuracy + calibration). |
+| `archive/` | `app.py`, `sum_app.py`, `batch_wuc_legacy.ipynb` — reference only, nothing imports them. |
 | `README.md` | Public-facing architecture + flow charts. |
+| `GLIDEPATH.md` | **Finish line + parked list.** Read before starting work. |
 | `CLAUDE.md` | ← this file (mutable state). |
 
+Root holds only what `main_app.py` imports, plus data assets. Training
+scripts have no local imports and still run from repo root:
+`~/.venvs/wuc/bin/python training/train_hierarchical.py`.
+
 **Gitignored — never committed:**
-- `FinalData.csv`, `new_data.csv`, `kc135_wuc_lookup_levels.csv` (CUI data)
+- `data/`, `app_data.csv`, `FinalData*.csv`, `new_data.csv`,
+  `kc135_wuc_lookup_levels.csv`, `nov_24_wuc_predict.csv` (CUI data + derived)
+- `labeling_worksheet.csv`, `*_predictions.csv`, `*.log`
 - `data_splits/`, `wuc-model-v2/`, `wuc-model-v2-extended/`, `wuc-model-hier/`
 
 ---
@@ -138,21 +174,31 @@ Top-2 and top-3 always shown below as bullet points under "Other candidates".
 
 ## Restart (every session, after `git pull`)
 
-```bash
-# Ensure ollama daemon is up
-pgrep -f "ollama serve" > /dev/null || nohup ollama serve > ~/ollama.log 2>&1 &
+**Paste these as SINGLE LINES.** The JupyterHub web terminal auto-indents
+pasted text and silently truncates backslash continuations — it has mangled
+this command repeatedly.
 
-# Restart streamlit pointing at the local hier model
-pkill -9 -f streamlit ; sleep 2
-WUC_MODEL_PATH=./wuc-model-hier nohup streamlit run main_app.py \
-  --server.port 8501 --server.address 0.0.0.0 \
-  --server.headless true --server.enableCORS false \
-  --server.enableXsrfProtection false --browser.gatherUsageStats false \
-  > ~/streamlit.log 2>&1 &
+```bash
+pgrep -f "ollama serve" > /dev/null || nohup ollama serve > ~/ollama.log 2>&1 &
 ```
 
+```bash
+pkill -9 -f streamlit; sleep 2; WUC_MODEL_PATH=./wuc-model-hier nohup ~/.venvs/wuc/bin/streamlit run main_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false --browser.gatherUsageStats false > ~/streamlit.log 2>&1 &
+```
+
+**Note the venv path** — `~/.venvs/wuc/bin/streamlit`, not bare `streamlit`.
+Same for scripts that import torch: `~/.venvs/wuc/bin/python training/...`.
+
 **`WUC_MODEL_PATH` is REQUIRED.** Without it, `model_loader.py` falls back to
-`jonday/wuc-model` (legacy BERT-base on HF) — that's NOT the shipped model.
+`jonday/wuc-model` (legacy BERT-base on HF) — that's NOT the shipped model,
+and it has a different label space (1727 vs 1251 classes). It loads without
+complaint and returns confident wrong answers. `training/batch_predict.py`
+hard-fails when it's unset; the Streamlit app does not (open follow-up).
+
+**Ollama cold start takes ~150 seconds** loading 8.9 GiB onto the GPU. Tab 3
+appears to hang — showing "Narrative Summary" and nothing below, because the
+breakdowns render after the stream completes. It is not broken. Use the
+**Template (offline)** engine to check data independent of the LLM.
 
 ---
 
@@ -194,33 +240,24 @@ sleep 3 && ollama pull gemma4:e4b
 
 ---
 
-## Open follow-ups (ranked)
+## Open follow-ups
 
-1. **Discrepancy-only model variant** — train on `["Discrepancy", "How Mal"]`
-   only for the live pre-fix workflow. Expected ~0.55-0.65 macro F1 (down
-   from 0.77 — informal text is harder). Tab 1 would route by inputs supplied.
-2. **Hand-label ~100 production samples** and re-evaluate. Test set is sampled
-   from the same QC pipeline as training; hand-labeled prod samples are the
-   number to actually trust.
-3. **Confusion matrix / error analysis** on the held-out test set. Errors
-   often cluster around adjacent WUCs in the same subsystem; reveals
-   relabeling opportunities.
-4. **Prompt-style selector in Tab 3** — three named templates ("brief /
-   engineering / executive") instead of one shared `ANALYST_PROMPT`.
-5. **Recommendations step in prompt** — append "Propose 2-3 prioritized
-   maintenance/supply-chain actions justified by the data."
-6. **Move BERT to GPU at inference** — currently `model_loader.py` lets
-   torch pick the device (works because of the `_model_device()` helper),
-   but inference defaults to CPU on the streamlit launch unless `.to('cuda')`
-   is explicit. Single-line patch.
-7. **CSV batch prediction in Tab 1** — wasn't carried over from legacy
-   `app.py`. Useful for bulk re-validation; easy to port.
-8. **Bump `ClaudeAdapter` default** from `claude-opus-4-6` → `claude-opus-4-7`.
-9. **Verify `kc135_wuc_lookup_levels.csv`** vs committed `_dictionary.csv` —
-   teammate's file may have richer columns. App falls back to dictionary
-   currently and that's fine.
-10. **Decide fate of legacy `jonday/wuc-model` on HF** — user expressed
-    discomfort about leaving CUI-trained weights on a public hub.
+**Moved to `GLIDEPATH.md`** — that file ranks them into phases and, more
+usefully, records what is deliberately NOT being built with an un-park
+trigger for each. The ten-item list that used to live here is what project
+creep looks like: only four of them were ever blocking.
+
+Current state: **Phase 0 closed** (data source fixed). **Phase 1 is next** —
+`batch_predict.py --worksheet 34`, then hand-check 100 production records.
+That number is the only thing standing between this project and done.
+
+Two small items found 2026-07-31, not yet fixed:
+
+- `model_loader.py` should **raise** when `WUC_MODEL_PATH` is unset rather
+  than silently loading the legacy HF model.
+- `build_input_text()` guards with `isinstance(value, str)`, which silently
+  drops `How Mal` / `Action Taken` when they arrive as pandas numerics.
+  `batch_predict.py` works around it; the shared helper should be fixed.
 
 ---
 
@@ -240,6 +277,35 @@ the data.
 ---
 
 ## Gotchas (lessons learned)
+
+- **The container gets rebuilt under you.** As of 2026-07-31 the image moved
+  Python 3.10 → 3.12, orphaning every `pip install --user` package in
+  `~/.local/lib/python3.10`. Symptom: `ModuleNotFoundError: No module named
+  'streamlit'` even though `~/.local/bin/streamlit` exists. Diagnose with
+  `python -V` vs `ls ~/.local/lib/`.
+- **The 3.12 image ships `torch 2.12.0+cu130` with working CUDA. NEVER let
+  pip replace it.** `requirements.txt` lists `torch`, so
+  `pip install -r requirements.txt` would pull a PyPI wheel that may not
+  match the driver (595.71 / CUDA 13.2, RTX 6000 Ada 48 GB). Install the
+  other packages explicitly instead.
+- **System Python is PEP 668 externally-managed** — plain `pip install --user`
+  fails. The fix in place is a venv that inherits the image's torch:
+  `python -m venv --system-site-packages ~/.venvs/wuc`, then
+  `~/.venvs/wuc/bin/pip install streamlit altair transformers huggingface-hub ollama anthropic`.
+  Verify torch survived: it must still report `2.12.0+cu130` and `cuda True`.
+- **Raw extracts store dates as Excel serials** (`43718` = 2019-09-10).
+  `pd.to_datetime` on an integer column reads them as *nanoseconds since
+  epoch*, so everything lands in Jan 1970 and every date filter silently
+  matches nothing — `sum_utils.py:180` coerces, and `NaT >= start_date` is
+  always False. `build_app_data.py::_parse_dates` detects and converts;
+  it now fails loudly rather than passing bad dates to the UI.
+- **Quartile buckets computed on the subset are tautological.** Fixed in
+  `_flight_hour_buckets` — edges now come from the full fleet, so departure
+  from 25% is the signal. Watch for this pattern anywhere else: deriving
+  thresholds from the same slice you're binning guarantees a flat result.
+- **`altair` and `numpy` are imported directly** (`main_app.py:153` et al.)
+  but were missing from `requirements.txt` until 2026-07-31 — they came in
+  transitively via streamlit and would have broken a clean install.
 
 - **Auth on Windows multi-account:** machine has `usma-stats` cached; pushing
   to `lonespear/wuc_predict` needs GCM re-prompt via system browser.
