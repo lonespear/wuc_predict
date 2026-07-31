@@ -92,11 +92,24 @@ Confidence distribution also changed completely: the ≥70% band went from
 largely an artifact of the wrong pooled vector.
 
 **Consequences still outstanding:**
-- **`compare_models.py` must be re-run.** The v2-vs-hierarchical comparison
-  that justified deploying `wuc-model-hier` was measured through the broken
-  path. `wuc-model-v2` came from `train_fresh.py`, which uses the standard
-  forward, so it was pooled consistently — meaning the comparison was not
-  apples-to-apples.
+- **The v2-vs-hierarchical table below was NOT corrupted.** Both figures are
+  training-time evals, each model scoring itself in-process. The pooling
+  defect only affected the serving path. Re-verified 2026-07-31.
+- **`compare_models.py` is broken for the OLD model** and its output should
+  be ignored, not acted on. It maps predictions through
+  `model.config.id2label`, but `jonday/wuc-model` only ever had HF's default
+  `LABEL_0..LABEL_1726` placeholders there — so it scores 0.0000 by
+  construction while reporting 99% confidence. Re-run 2026-07-31 gave
+  `OLD 0.0000` (meaningless) vs `NEW 0.9080 acc / 0.8071 macro F1` on 2,000
+  held-out rows. Only the NEW column is real. Note macro F1 over 1,251
+  classes on 2,000 rows is very noisy — do not quote it against the 0.772
+  training-time figure.
+- **Same root cause hides a dead fallback in `model_loader.py`.** The
+  `wuc_mapping.json` fallback is guarded by
+  `if model.config.id2label and len(...) == num_labels`, which the legacy
+  model's placeholder labels satisfy. The fallback never fires; running
+  without `WUC_MODEL_PATH` yields `LABEL_847`-style output. Moot once
+  `WUC_MODEL_PATH` is made mandatory (see open follow-ups).
 - The smoke-test figure below (`12AAN` at 76.8%) was measured under the
   defect and will now read differently.
 - Backup of the original config is at `wuc-model-hier/config.json.bak`.
