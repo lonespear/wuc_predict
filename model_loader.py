@@ -22,6 +22,12 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 # GPU box: export WUC_MODEL_PATH=./wuc-model-hier
 MODEL_PATH = os.environ.get("WUC_MODEL_PATH", "jonday/wuc-model")
 
+# MUST match train_hierarchical.py / train_fresh.py MAX_LEN. Without an
+# explicit max_length the tokenizer falls back to tokenizer.model_max_length
+# (8192 for ModernBERT), feeding the classifier sequences up to 64x longer
+# than anything it saw in training. Silent accuracy loss on long write-ups.
+MAX_LEN = 128
+
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
 model.eval()
@@ -73,7 +79,7 @@ def predict_discrepancy(text: str, method: int = 1):
     if not isinstance(text, str) or not text.strip():
         return "Invalid input"
 
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=MAX_LEN)
     inputs = {k: v.to(_model_device()) for k, v in inputs.items()}
     with torch.no_grad():
         outputs = model(**inputs)
@@ -99,7 +105,7 @@ def predict_top_k(text: str, k: int = 3) -> list[dict]:
     if not isinstance(text, str) or not text.strip():
         return []
 
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=MAX_LEN)
     inputs = {k_: v.to(_model_device()) for k_, v in inputs.items()}
     with torch.no_grad():
         outputs = model(**inputs)

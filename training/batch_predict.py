@@ -49,7 +49,9 @@ if not os.environ.get("WUC_MODEL_PATH"):
         "Fix: export WUC_MODEL_PATH=./wuc-model-hier"
     )
 
-from model_loader import model, tokenizer, index_to_wuc, wuc_defs, main_system  # noqa: E402
+from model_loader import (  # noqa: E402
+    model, tokenizer, index_to_wuc, wuc_defs, main_system, MAX_LEN,
+)
 
 # Must match prepare_data.py TEXT_FIELDS, in this order.
 TEXT_FIELDS = ["Discrepancy", "Corrective Action", "WCE Narrative", "How Mal", "Action Taken"]
@@ -91,14 +93,21 @@ def band(confidence: float) -> str:
     return "low (<30%)"
 
 
-def predict_batches(texts: list[str], batch_size: int, top_k: int, device: torch.device):
-    """Batched top-k inference. Returns (wucs, confidences) as nested lists."""
+def predict_batches(texts: list[str], batch_size: int, top_k: int,
+                    device: torch.device, max_length: int):
+    """Batched top-k inference. Returns (wucs, confidences) as nested lists.
+
+    max_length MUST match training (train_hierarchical.py MAX_LEN = 128).
+    Omitting it lets the tokenizer fall back to model_max_length (8192 for
+    ModernBERT), so long write-ups reach the classifier at sequence lengths
+    it never trained on — a silent accuracy loss, not an error."""
     all_wucs, all_confs = [], []
     total = len(texts)
 
     for start in range(0, total, batch_size):
         chunk = texts[start:start + batch_size]
-        enc = tokenizer(chunk, return_tensors="pt", truncation=True, padding=True)
+        enc = tokenizer(chunk, return_tensors="pt", truncation=True,
+                        padding=True, max_length=max_length)
         enc = {k: v.to(device) for k, v in enc.items()}
 
         with torch.no_grad():
@@ -125,6 +134,10 @@ def main() -> int:
     ap.add_argument("--output", default=None, help="default: <input>_predictions.csv")
     ap.add_argument("--batch-size", type=int, default=64)
     ap.add_argument("--top-k", type=int, default=3)
+    ap.add_argument("--max-length", type=int, default=MAX_LEN,
+                    help=f"tokenizer truncation length (default {MAX_LEN}, "
+                         f"matching training). Changing this invalidates "
+                         f"comparison with the reported model metrics")
     ap.add_argument("--limit", type=int, default=None, help="only the first N rows")
     ap.add_argument("--sample", type=int, default=None, metavar="N",
                     help="random sample of N rows (seeded). Prefer this over "
@@ -210,7 +223,8 @@ def main() -> int:
         print(f"WARNING: {empty:,} rows produced empty input text")
 
     print("Predicting...")
-    wucs, confs = predict_batches(texts, args.batch_size, args.top_k, device)
+    wucs, confs = predict_batches(texts, args.batch_size, args.top_k, device,
+                                  args.max_length)
 
     out = df.copy()
     for i in range(args.top_k):
@@ -246,13 +260,38 @@ def main() -> int:
                 for (_, r), tv in zip(scored.iterrows(), t)
             ]
 
+            # A record whose true WUC is not among the model's classes cannot
+            # be got right — prepare_data.py's MIN_PER_CLASS filter drops rare
+            # WUCs from the label map entirely. Mixing those into the headline
+            # accuracy conflates two different problems: how good the model is,
+            # and what share of reality it can express.
+            label_space = {str(v).strip().upper() for v in index_to_wuc.values()}
+            scored["label_in_model_space"] = t.isin(label_space)
+            answerable = scored[scored["label_in_model_space"]]
+            impossible = int((~scored["label_in_model_space"]).sum())
+
             print(f"\nScored against '{truth}' ({len(scored):,} labeled rows):")
-            print(f"  top-1 accuracy: {scored['top1_correct'].mean():.4f}")
-            print(f"  top-{args.top_k} accuracy: {scored['topk_correct'].mean():.4f}")
-            print("\n  Calibration by confidence band:")
+            print(f"  top-1 accuracy (all rows):   {scored['top1_correct'].mean():.4f}")
+            print(f"  top-{args.top_k} accuracy (all rows):   {scored['topk_correct'].mean():.4f}")
+            if impossible:
+                print(f"\n  Label coverage: {len(answerable):,} of {len(scored):,} "
+                      f"({100.0 * len(answerable) / len(scored):.1f}%) have a true "
+                      f"WUC the model can emit.")
+                print(f"  {impossible:,} rows ({100.0 * impossible / len(scored):.1f}%) "
+                      f"are unanswerable — their WUC was below MIN_PER_CLASS and "
+                      f"never entered the label map.")
+                if len(answerable):
+                    print(f"\n  On answerable rows only:")
+                    print(f"    top-1: {answerable['top1_correct'].mean():.4f}")
+                    print(f"    top-{args.top_k}: {answerable['topk_correct'].mean():.4f}")
+                print("\n  Report BOTH: accuracy is model quality, coverage is a "
+                      "data/label-map decision. They have different fixes.")
+
+            print("\n  Calibration by confidence band (answerable rows):")
             print(f"  {'band':<14} {'n':>8} {'top-1 acc':>10}")
+            basis = answerable if len(answerable) else scored
             for b in ("high (>=70%)", "mid (30-70%)", "low (<30%)"):
-                sub = scored[scored["confidence_band"] == b]
+                sub = basis[basis["confidence_band"] == b]
                 if len(sub):
                     print(f"  {b:<14} {len(sub):>8,} {sub['top1_correct'].mean():>10.4f}")
             print("\n  NOTE: this scores against the same QC pipeline that "
