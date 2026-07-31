@@ -22,6 +22,8 @@ current_wire/
 # Derived from the CUI extracts — regenerate, never commit
 data/
 app_data.csv
+confusion_pairs.csv
+adjudication_worksheet.csv
 labeling_worksheet.csv
 *_predictions.csv
 nov_24_wuc_predict.csv

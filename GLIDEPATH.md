@@ -248,7 +248,41 @@ detour — it's the instrument for 1.3.
 
 ---
 
-## Phase 2 — Fix only what the labels expose
+## Phase 2 — Fix only what the labels expose  ✅ CLOSED 2026-07-31
+
+| # | Task | Outcome |
+|---|---|---|
+| 2.1 | Confusion analysis | ✅ `training/error_analysis.py`. 98.31% system-level; only 1.7% of records are cross-system errors; 62.8% of mistakes are same-subsystem near misses. |
+| 2.2 | Relabel ambiguous WUC pairs | ✅ **Identified, not applied.** `confusion_pairs.csv` exports every pair with counts and a bidirectional flag. |
+| 2.3 | `.to('cuda')` at inference | ✅ done — Tab 1 was running on CPU |
+| 2.4 | Retrain | ❌ **Declined. See below.** |
+| 2.5 | `WUC_MODEL_PATH` must raise | ✅ done — silent legacy-model fallback removed |
+| 2.6 | `build_input_text` field coercion | ✅ done — `str()` instead of `isinstance(str)` |
+
+### Why no retrain
+
+2.1 did find systematic labeling problems, which is the trigger 2.4 was
+written for. Sized before acting: the top 15 confusion pairs total ~137
+records out of 15,876 — under 1%. Merging every one of them buys roughly a
+point of exact-match.
+
+Against that, a retrain changes the label space, invalidates the deployed
+checkpoint, and re-opens the evaluation Phase 1 just closed. **That is the
+"+0.01 macro F1" trade this document was written to prevent.**
+
+The relabeling finding is more valuable as **output to whoever owns the
+source data** than as a model change. `72LA0 ↔ 72VA0` being bidirectional
+means their own records use two codes interchangeably — actionable for them
+regardless of any model. `confusion_pairs.csv` is that deliverable.
+
+**Un-park a retrain only if:** the data owners actually merge codes upstream
+and ship a corrected extract, or coverage becomes a stated requirement and
+`MIN_PER_CLASS` has to drop. Not for accuracy chasing.
+
+---
+
+<details>
+<summary>Original Phase 2 plan</summary>
 
 **Do not start until Phase 1 is closed.** The labeled set from 1.3 tells you
 what's actually broken; guessing beforehand is how the follow-up list got to
@@ -266,7 +300,11 @@ warranted" (a legitimate and likely outcome), or one retrain. Not two.
 
 ---
 
-## Phase 3 — Freeze and hand off
+</details>
+
+---
+
+## Phase 3 — Freeze and hand off  ← *you are here*
 
 | # | Task | Est. |
 |---|---|---|

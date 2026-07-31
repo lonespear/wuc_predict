@@ -137,6 +137,22 @@ def main() -> int:
     # ---- Confusion pairs --------------------------------------------------
     pairs = Counter(zip(truth[wrong], pred[wrong]))
     if pairs:
+        # Written out because this is a finding for whoever owns the source
+        # data, independent of any model: codes their own records use
+        # interchangeably. Bidirectional pairs are the strongest signal.
+        rows = []
+        for (t, p), count in pairs.most_common():
+            rows.append({
+                "truth_wuc": t,
+                "predicted_wuc": p,
+                "n": count,
+                "same_system": t[:2] == p[:2],
+                "same_subsystem": t[:3] == p[:3],
+                "reverse_n": pairs.get((p, t), 0),
+                "bidirectional": pairs.get((p, t), 0) > 0,
+            })
+        pairs_out = REPO_ROOT / "confusion_pairs.csv"
+        pd.DataFrame(rows).to_csv(pairs_out, index=False)
         print("\n" + "=" * 66)
         print("TOP CONFUSION PAIRS (truth -> predicted)")
         print("=" * 66)
@@ -146,6 +162,12 @@ def main() -> int:
         print("\n  Repeated pairs are relabeling candidates, not model bugs — if two "
               "codes\n  are used interchangeably in the source data, no model can "
               "separate them.")
+        bidi = sum(1 for r in rows if r["bidirectional"])
+        print(f"\n  Wrote {pairs_out.name}: {len(rows):,} pairs, {bidi:,} "
+              f"bidirectional.")
+        print("  Bidirectional pairs are the strongest evidence of "
+              "interchangeable codes\n  and are a finding for whoever owns the "
+              "source data, model aside.")
 
     # ---- Adjudication worksheet ------------------------------------------
     conf = pd.to_numeric(df["confidence_1"], errors="coerce")
