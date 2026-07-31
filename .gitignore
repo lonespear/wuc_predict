@@ -7,7 +7,7 @@ venv/
 .streamlit/secrets.toml
 
 # Local data — do NOT commit (data sensitivity)
-FinalData.csv
+FinalData*.csv
 kc135_wuc_lookup_levels.csv
 new_data.csv
 data_splits/
@@ -15,6 +15,17 @@ wuc-model-v2/
 wuc-model-v2-extended/
 wuc-model-hier/
 *.parquet
+
+# Ad-hoc scratch copies pulled off the GPU box — may contain CUI extracts
+current_wire/
+
+# Derived from the CUI extracts — regenerate, never commit
+data/
+app_data.csv
+labeling_worksheet.csv
+*_predictions.csv
+*.log
+.ipynb_checkpoints/
 
 # Editor / OS
 .vscode/
