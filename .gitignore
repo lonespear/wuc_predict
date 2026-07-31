@@ -24,6 +24,7 @@ data/
 app_data.csv
 labeling_worksheet.csv
 *_predictions.csv
+nov_24_wuc_predict.csv
 *.log
 .ipynb_checkpoints/
 
@@ -32,7 +33,3 @@ labeling_worksheet.csv
 .idea/
 .DS_Store
 Thumbs.db
-data/
-*.log
-.ipynb_checkpoints/
-nov_24_wuc_predict.csv
