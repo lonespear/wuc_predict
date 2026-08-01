@@ -291,15 +291,22 @@ class ClaudeAdapter:
 class GemmaAdapter:
     """Local Gemma 4 via Ollama. Offline, enterprise-safe, no API key.
 
-    Default model is the EmbeddedGemma 4B variant (`gemma4:e4b`); swap to
-    `gemma4:e2b` for lighter footprint or `gemma4:26b-a4b` for the MoE 26B
-    (4B active) when GPU/RAM allows.
+    Model is read from WUC_OLLAMA_MODEL (default `gemma4:e4b`), context from
+    WUC_OLLAMA_CTX (default 8192). Any Ollama-served model works — the adapter
+    is not Gemma-specific despite the class name.
+
+    Sizing note: the profile JSON is small (a few KB), so context is not the
+    constraint; reasoning quality is. Whatever is pulled must leave room for
+    the ModernBERT classifier that shares the GPU.
     """
 
-    def __init__(self, model: str = "gemma4:e4b", num_ctx: int = 8192):
-        self.model = model
-        self.num_ctx = num_ctx
-        self.name = f"Gemma 4 — {model} (local)"
+    def __init__(self, model: str | None = None, num_ctx: int | None = None):
+        # Env-configurable so a larger local model can be swapped in with an
+        # `ollama pull` and a restart, no code change. The box is a 48 GB
+        # RTX 6000 Ada; e4b is 9.6 GB, so there is substantial headroom.
+        self.model = model or os.environ.get("WUC_OLLAMA_MODEL", "gemma4:e4b")
+        self.num_ctx = num_ctx or int(os.environ.get("WUC_OLLAMA_CTX", "8192"))
+        self.name = f"{self.model} (local)"
 
     def available(self) -> bool:
         try:
