@@ -100,7 +100,7 @@ def count_axis(title: str) -> alt.Axis:
     return alt.Axis(title=title, format="d", tickMinStep=1, grid=True)
 
 
-def concentration_chart(concentration: dict, height: int = 26):
+def concentration_chart(concentration: dict, height: int = 34):
     """Base concentration as deviation from expected — not raw counts.
 
     `index` is observed records / expected-from-that-base's-overall-volume.
@@ -121,15 +121,30 @@ def concentration_chart(concentration: dict, height: int = 26):
     rows.sort(key=lambda r: r["index"], reverse=True)
     hi = max(2.0, max(r["index"] for r in rows))
 
-    return (
+    bars = (
         alt.Chart(alt.Data(values=rows))
-        .mark_bar(cornerRadiusEnd=4, height=14)
+        .mark_bar(cornerRadiusEnd=4, height=16)
         .encode(
             x=alt.X("index:Q",
                     axis=alt.Axis(title="× expected for this base's volume",
                                   values=[0, 0.5, 1, 1.5, 2, 2.5, 3]),
                     scale=alt.Scale(domain=[0, hi])),
-            y=alt.Y("Base:N", sort="-x", axis=alt.Axis(title=None, labelLimit=150)),
+            y=alt.Y("Base:N", sort="-x",
+                    axis=alt.Axis(
+                        title=None,
+                        # Colours are set explicitly rather than inherited: a
+                        # chart rendered with Streamlit's own Altair theme
+                        # discards this module's registered theme, and the
+                        # inherited label colour then lands dark-on-dark.
+                        labelColor=INK_SECONDARY,
+                        labelFontSize=12,
+                        labelLimit=220,
+                        # Never silently drop labels — a bar with no name is
+                        # worse than a crowded axis.
+                        labelOverlap=False,
+                        domain=False,
+                        ticks=False,
+                    )),
             color=alt.Color(
                 "index:Q",
                 scale=alt.Scale(domain=[0, 1, hi],
@@ -143,5 +158,15 @@ def concentration_chart(concentration: dict, height: int = 26):
                 alt.Tooltip("index:Q", title="× expected", format=".2f"),
             ],
         )
-        .properties(height=max(120, height * len(rows)))
+        .properties(height=max(140, height * len(rows)))
     )
+    labels = (
+        alt.Chart(alt.Data(values=rows))
+        .mark_text(align="left", dx=6, fontSize=11, color=INK_SECONDARY)
+        .encode(
+            x=alt.X("index:Q", scale=alt.Scale(domain=[0, hi])),
+            y=alt.Y("Base:N", sort="-x"),
+            text=alt.Text("index:Q", format=".1f"),
+        )
+    )
+    return (bars + labels).properties(height=max(140, height * len(rows)))

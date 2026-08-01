@@ -364,20 +364,20 @@ with tab_query:
                     hm = _year_month_heatmap(recs)
                     if hm is not None:
                         st.caption("Records per month — darker = more")
-                        st.altair_chart(hm, use_container_width=True)
+                        st.altair_chart(hm, use_container_width=True, theme=None)
 
             # --- 4. Top discrepancies / fixes side by side -------------
             c_disc, c_fix = st.columns(2)
             with c_disc:
                 if analysis["top_discrepancies"]:
                     st.subheader("Top discrepancies")
-                    st.altair_chart(_hbar(analysis["top_discrepancies"], "Count", "Discrepancy"), use_container_width=True)
+                    st.altair_chart(_hbar(analysis["top_discrepancies"], "Count", "Discrepancy"), use_container_width=True, theme=None)
                     with st.expander("raw counts"):
                         st.dataframe(pd.DataFrame(analysis["top_discrepancies"].items(), columns=["Discrepancy", "Count"]), hide_index=True, use_container_width=True)
             with c_fix:
                 if analysis["top_fixes"]:
                     st.subheader("Top corrective actions")
-                    st.altair_chart(_hbar(analysis["top_fixes"], "Count", "Corrective action"), use_container_width=True)
+                    st.altair_chart(_hbar(analysis["top_fixes"], "Count", "Corrective action"), use_container_width=True, theme=None)
                     with st.expander("raw counts"):
                         st.dataframe(pd.DataFrame(analysis["top_fixes"].items(), columns=["Corrective action", "Count"]), hide_index=True, use_container_width=True)
 
@@ -386,7 +386,7 @@ with tab_query:
             with c_base:
                 if analysis["base_breakdown"]:
                     st.subheader("By base")
-                    st.altair_chart(_hbar(analysis["base_breakdown"], "Count", "Base"), use_container_width=True)
+                    st.altair_chart(_hbar(analysis["base_breakdown"], "Count", "Base"), use_container_width=True, theme=None)
             with c_seas:
                 if analysis["seasonality"] and sum(analysis["seasonality"].values()) > 0:
                     st.subheader("Seasonality (month-of-year, all years)")
@@ -396,7 +396,7 @@ with tab_query:
             # --- 6. Top problem-area WUCs (drill-through) --------------
             if analysis["wuc_breakdown"]:
                 st.subheader("Top problem areas (WUC)")
-                st.altair_chart(_hbar(analysis["wuc_breakdown"], "Count", "WUC", label_limit=70), use_container_width=True)
+                st.altair_chart(_hbar(analysis["wuc_breakdown"], "Count", "WUC", label_limit=70), use_container_width=True, theme=None)
                 wuc_codes = [lbl.split(" ")[0] for lbl in analysis["wuc_breakdown"]]
                 pick = st.selectbox("Inspect a WUC in the Profile tab:", ["—"] + wuc_codes, key="q_wuc_pick")
                 if pick != "—":
@@ -496,7 +496,7 @@ with tab_profile:
             hm = _year_month_heatmap(profile["year_month_matrix"])
             if hm is not None:
                 st.markdown("**When — records per month (darker = more)**")
-                st.altair_chart(hm, use_container_width=True)
+                st.altair_chart(hm, use_container_width=True, theme=None)
 
             # Seasonality and year-over-year bar charts removed: the calendar
             # heatmap above encodes both axes already, and the Trend metric in
@@ -507,7 +507,7 @@ with tab_profile:
             wmap = _world_map(profile.get("base_geo", []),
                               concentration=profile.get("base_concentration") or {})
             if wmap is not None:
-                st.altair_chart(wmap, use_container_width=True)
+                st.altair_chart(wmap, use_container_width=True, theme=None)
                 cov = profile.get("base_geo_coverage")
                 if cov and cov[1]:
                     st.caption(
@@ -527,12 +527,12 @@ with tab_profile:
             if _conc is not None:
                 st.markdown("**Concentration — records vs. what each base's "
                             "overall maintenance volume predicts**")
-                st.altair_chart(_conc, use_container_width=True)
+                st.altair_chart(_conc, use_container_width=True, theme=None)
                 st.caption("1.0× = exactly what that base's workload predicts. "
                            "Above ~1.5× is a genuine hotspot; a tall raw count at "
                            "1.0× just means a busy base.")
             elif profile["base_distribution"]:
-                st.altair_chart(_hbar(profile["base_distribution"], "Records", "Base"), use_container_width=True)
+                st.altair_chart(_hbar(profile["base_distribution"], "Records", "Base"), use_container_width=True, theme=None)
 
             c_life, c_phase = st.columns(2)
             with c_life:
