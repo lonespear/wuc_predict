@@ -138,10 +138,10 @@ class NullAdapter:
         tr = profile.get("trend") or {}
         if tr.get("direction"):
             msg = (f"**Direction.** {tr['direction'].title()} — "
-                   f"{tr['earlier_period_records']:,} records in "
-                   f"{tr['first_full_year']}-ward years vs "
-                   f"{tr['recent_period_records']:,} recently "
-                   f"({tr.get('change_pct', 0):+.0f}%).")
+                   f"{tr['earlier_period_records']:,} records in the earliest "
+                   f"full years vs {tr['recent_period_records']:,} in the most "
+                   f"recent ({tr.get('change_pct', 0):+.0f}%), across "
+                   f"{tr['first_full_year']}–{tr['last_full_year']}.")
             if tr.get("excluded_partial_year"):
                 msg += (f" {tr['excluded_partial_year']} is a partial year and "
                         f"was excluded.")
@@ -164,8 +164,37 @@ class NullAdapter:
             lines.append(f"Typical corrective actions involve: {fixes}.")
         lines.append("")
 
-        # WHERE
-        if profile["base_distribution"]:
+        # WHERE — concentration, not raw counts. The biggest bases top a raw
+        # count for every WUC, which tells you nothing. `index` compares
+        # observed records to what that base's overall share of fleet
+        # maintenance predicts.
+        conc = profile.get("base_concentration") or {}
+        if conc:
+            ranked = sorted(conc.items(), key=lambda kv: kv[1]["index"], reverse=True)
+            hot = [(b, v) for b, v in ranked if v["index"] >= 1.5 and v["records"] >= 3]
+            if hot:
+                hot_str = "; ".join(
+                    f"{b} ({v['records']} vs {v['expected_if_typical']:.0f} expected, "
+                    f"{v['index']:.1f}x)" for b, v in hot[:3]
+                )
+                lines.append(
+                    f"**Where.** Genuinely concentrated at: {hot_str}. "
+                    f"These exceed what their overall maintenance volume predicts."
+                )
+            else:
+                busiest = sorted(conc.items(), key=lambda kv: kv[1]["records"],
+                                 reverse=True)[:3]
+                busy_str = "; ".join(
+                    f"{b} ({v['records']}, {v['index']:.1f}x expected)"
+                    for b, v in busiest
+                )
+                lines.append(
+                    f"**Where.** No base stands out — this is fleet-wide. "
+                    f"Highest raw counts are {busy_str}, but each is close to "
+                    f"what its overall maintenance volume predicts."
+                )
+            lines.append("")
+        elif profile["base_distribution"]:
             top_bases = _top_items(profile["base_distribution"], 3)
             base_str = "; ".join(
                 f"{b} ({c}, {_pct(c, total)})" for b, c in top_bases
@@ -185,14 +214,28 @@ class NullAdapter:
             lines.append(f"Year-over-year: {trend}.")
         lines.append("")
 
-        # LIFECYCLE
+        # LIFECYCLE — buckets are fleet-wide quartiles, so 25% is the null
+        # result. Judge by deviation from 25%, not by which bucket is largest.
         if profile["flight_hour_buckets"]:
-            top_bucket = _top_items(profile["flight_hour_buckets"], 1)[0]
+            buckets = profile["flight_hour_buckets"]
+            bucket_total = sum(buckets.values()) or 1
+            top_bucket = _top_items(buckets, 1)[0]
+            share = 100.0 * top_bucket[1] / bucket_total
+            if share < 32:
+                verdict = ("spread evenly across airframe age — no lifecycle "
+                           "signal")
+            elif "High" in top_bucket[0]:
+                verdict = (f"skewed toward high-time airframes "
+                           f"({share:.0f}% vs 25% expected) — consistent with wear-out")
+            elif "Low" in top_bucket[0]:
+                verdict = (f"skewed toward low-time airframes "
+                           f"({share:.0f}% vs 25% expected) — not wear-out; look at "
+                           f"install quality or inspection scheduling")
+            else:
+                verdict = f"concentrated mid-life ({share:.0f}% vs 25% expected)"
             lines.append(
-                f"**Airframe lifecycle.** Most occurrences "
-                f"({_pct(top_bucket[1], total)}) are on airframes in the "
-                f"{top_bucket[0]} flight-hour band, suggesting this failure is "
-                f"{'age-correlated' if 'High' in top_bucket[0] else 'not strongly age-driven'}."
+                f"**Airframe lifecycle.** Occurrences are {verdict}. "
+                f"Largest band: {top_bucket[0]} ({top_bucket[1]})."
             )
         if profile["when_discovered_phase"]:
             top_phase = _top_items(profile["when_discovered_phase"], 2)
