@@ -227,7 +227,8 @@ def _world_topo() -> dict | None:
         return None
 
 
-def _world_map(records: list, value_name: str = "Records"):
+def _world_map(records: list, value_name: str = "Records",
+               concentration: dict | None = None):
     """Altair world map: filled sphere + graticule + country outlines + bubbles at
     base lat/lon sized by count. Renders entirely client-side via Vega-Lite with
     all geometry inlined in the spec — works behind reverse proxies where st.map's
@@ -241,28 +242,57 @@ def _world_map(records: list, value_name: str = "Records"):
         return None
     d = d.rename(columns={"count": value_name})
 
-    sphere = alt.Chart(alt.sphere()).mark_geoshape(fill="#eaf1f8")
+    sphere = alt.Chart(alt.sphere()).mark_geoshape(fill=viz_theme.SURFACE)
     graticule = alt.Chart(alt.graticule(step=[30, 30])).mark_geoshape(
-        stroke="#c9d4e0", strokeWidth=0.4, fill=None
+        stroke=viz_theme.BASELINE, strokeWidth=0.4, fill=None
     )
     layers = [sphere]
     topo = _world_topo()
     if topo is not None:
         land = alt.Chart(
             alt.Data(values=topo, format=alt.DataFormat(type="topojson", feature="countries"))
-        ).mark_geoshape(fill="#dbe4ee", stroke="#ffffff", strokeWidth=0.3)
+        ).mark_geoshape(fill=viz_theme.GRID, stroke=viz_theme.BASELINE, strokeWidth=0.3)
         layers.append(land)
     layers.append(graticule)
+    # Size carries volume; colour carries concentration. Without the colour
+    # channel the map just re-ranks the busiest bases, which is the error the
+    # concentration chart exists to correct.
+    if concentration:
+        d["index"] = d["base"].map(
+            lambda b: (concentration.get(b) or {}).get("index")
+        )
+    has_index = "index" in d.columns and d["index"].notna().any()
+
+    tips = [alt.Tooltip("base:N", title="Base"),
+            alt.Tooltip(f"{value_name}:Q", title="Records")]
+    if has_index:
+        tips.append(alt.Tooltip("index:Q", title="x expected", format=".2f"))
+
+    enc = dict(
+        longitude="lon:Q",
+        latitude="lat:Q",
+        # legend suppressed: the caption below already states what size means,
+        # and the rendered legend wrapped its labels into unreadable digits.
+        size=alt.Size(f"{value_name}:Q", scale=alt.Scale(range=[25, 1400]),
+                      legend=None),
+        tooltip=tips,
+    )
+    if has_index:
+        hi = max(2.0, float(d["index"].max()))
+        enc["color"] = alt.Color(
+            "index:Q",
+            scale=alt.Scale(domain=[0, 1, hi],
+                            range=[viz_theme.DIVERGE_LOW, viz_theme.DIVERGE_MID,
+                                   viz_theme.DIVERGE_HIGH]),
+            legend=alt.Legend(title="x expected", orient="bottom", direction="horizontal"),
+        )
     pts = (
         alt.Chart(d)
-        .mark_circle(opacity=0.78, color="#d62728", stroke="#7c1719", strokeWidth=0.6)
-        .encode(
-            longitude="lon:Q",
-            latitude="lat:Q",
-            size=alt.Size(f"{value_name}:Q", scale=alt.Scale(range=[25, 1400]), title=value_name),
-            tooltip=[alt.Tooltip("base:N", title="Base"), alt.Tooltip(f"{value_name}:Q")],
-        )
+        .mark_circle(opacity=0.8, stroke=viz_theme.SURFACE, strokeWidth=1.2)
+        .encode(**enc)
     )
+    if not has_index:
+        pts = pts.encode(color=alt.value(viz_theme.SERIES_1))
     layers.append(pts)
     return (
         alt.layer(*layers)
@@ -474,7 +504,8 @@ with tab_profile:
             # one question is what made this page read as a wall of visuals.
 
             st.markdown("**Where**")
-            wmap = _world_map(profile.get("base_geo", []))
+            wmap = _world_map(profile.get("base_geo", []),
+                              concentration=profile.get("base_concentration") or {})
             if wmap is not None:
                 st.altair_chart(wmap, use_container_width=True)
                 cov = profile.get("base_geo_coverage")
