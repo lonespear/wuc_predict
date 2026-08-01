@@ -390,19 +390,55 @@ sleep 3 && ollama pull gemma4:e4b
 
 ## Sensitivity & deployment policy
 
-**Training data is treated as CUI.** Implications baked into the project:
+**Training data is CUI.** The boundary that matters is **whitelisted NIPR vs
+public internet** — not "minimize copies."
 
-- Data CSVs are gitignored (`FinalData.csv`, `new_data.csv`,
-  `kc135_wuc_lookup_levels.csv`).
-- **Trained model weights stay on the school's GPU disk.** Do NOT push
-  `wuc-model-hier/`, `wuc-model-v2/`, etc. to Hugging Face Hub.
-- The legacy `jonday/wuc-model` is on HF from before this constraint took
-  effect; user has not yet decided whether to delete that.
-- For ANY remote LLM adapters: only `ClaudeAdapter` (Anthropic API) was
-  considered, and it's gated behind `ANTHROPIC_API_KEY`. Default deployment
-  uses local Gemma only.
-- Streamlit Community Cloud is **not viable** (data sensitivity + no Ollama
-  support + 1 GB RAM ceiling).
+**Authorized (confirmed by the owner 2026-07-31) — no action needed:**
+
+- The work laptop
+- The school Jupyter/GPU server (`icsarl.westpoint.edu`)
+- OneDrive (West Point tenant)
+
+CUI extracts living in several of these places is **fine** and is not a
+finding. Earlier revisions of this file implied otherwise; that was an
+incorrect inference, not a stated policy.
+
+**Not authorized — public hosting:**
+
+- **Do NOT push `wuc-model-hier/`, `wuc-model-v2/`, etc. to Hugging Face Hub**
+  or any public host.
+- Data CSVs stay gitignored — the GitHub repo is public.
+- Streamlit Community Cloud remains non-viable (public host, plus no Ollama
+  and a 1 GB RAM ceiling).
+- Remote LLM adapters: only `ClaudeAdapter` was considered, gated behind
+  `ANTHROPIC_API_KEY`. Default deployment is local Gemma.
+
+### On `jonday/wuc-model` — what the risk actually is
+
+Assessed 2026-07-31. **There is no practical path from those weights back to
+maintenance narratives:**
+
+- It is a **classifier, not a generative model** — it emits a distribution
+  over 1,727 classes. The training-data-extraction literature (Carlini et
+  al.) targets decoders that emit text. There is no decoder here.
+- The tokenizer is **stock BERT wordpiece (30,522)**. No vocabulary was fit
+  to the corpus, so no tail numbers or shop-specific terms are in it.
+- `id2label` is **`LABEL_0..LABEL_1726` placeholders**. A downloader gets a
+  model mapping text to an integer with no key to what any integer means —
+  they cannot even recover the WUC taxonomy.
+
+Residual theoretical exposure is membership inference (requires already
+holding the record) and embedding inversion (requires the embedding vectors,
+not the weights).
+
+**So the deciding question is authorization, not exploitability** — whether
+publishing a CUI-derived artifact to a commercial hub is permitted, which is
+a marking/authority call.
+
+**Recommendation: delete it, because the upside is zero.** It is superseded
+by `wuc-model-hier`, its placeholder-label config makes it useless to anyone
+including us, and as of 2026-07-31 `model_loader.py` no longer falls back to
+it. No reason to defend a policy question with nothing on the other side.
 
 ---
 

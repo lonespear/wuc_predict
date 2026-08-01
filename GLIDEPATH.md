@@ -309,8 +309,8 @@ warranted" (a legitimate and likely outcome), or one retrain. Not two.
 | # | Task | Est. |
 |---|---|---|
 | 3.1 | Sync the box to `origin/main` and confirm what's running matches the repo. | 15 min |
-| 3.2 | Delete `jonday/wuc-model` from Hugging Face. CUI-trained weights on a public hub is a liability, not a feature. | 5 min |
-| 3.3 | Resolve the local CUI copies (`current_wire/`) — data lives on the box, not the laptop. | 5 min |
+| 3.2 | Delete `jonday/wuc-model` from Hugging Face. Not because the weights are exploitable — they demonstrably are not (see CLAUDE.md) — but because it is superseded, its placeholder-label config makes it useless, nothing references it, and publishing a CUI-derived artifact to a commercial hub is an authorization question with zero upside. | 5 min |
+| 3.3 | ~~Resolve local CUI copies~~ ❌ **NOT A TASK.** Corrected 2026-07-31: the laptop, the school Jupyter server, and OneDrive are all whitelisted NIPR and authorized to hold CUI. The boundary is NIPR vs public internet, not copy count. Earlier revisions implied otherwise — that was an incorrect inference by Claude, not a stated policy. | — |
 | 3.4 | Final `CLAUDE.md` pass: restart command, real accuracy number, known limits. | 30 min |
 
 **Exit criteria:** someone else can restart the app from `CLAUDE.md` alone.
