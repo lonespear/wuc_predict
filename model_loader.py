@@ -1,7 +1,10 @@
 """WUC predictor — loads a fine-tuned classifier from a configurable path.
 
-Set WUC_MODEL_PATH to point at a local checkpoint directory (e.g. produced by
-train_hierarchical.py). Defaults to the legacy HF model for backward compat.
+WUC_MODEL_PATH is REQUIRED and must point at a local checkpoint directory
+(e.g. produced by train_hierarchical.py). Importing without it raises. There
+is deliberately no default: the old fallback to `jonday/wuc-model` loaded a
+different label space and returned confident wrong answers. That repo was
+deleted from Hugging Face on 2026-07-31.
 
 The active model expects text formatted as:
     "<discrepancy> [SEP] <corrective_action> [SEP] <wce_narrative> [SEP] <how_mal> [SEP] <action_taken>"

@@ -196,12 +196,12 @@ def main() -> None:
     with open(OUT_DIR / "test_metrics.json", "w") as f:
         json.dump({k: float(v) for k, v in test_results.items()}, f, indent=2)
     print(f"\nSaved to {OUT_DIR}/")
-    print("To push to Hugging Face:")
-    print("    huggingface-cli login")
-    print("    python -c \"from transformers import AutoModelForSequenceClassification, AutoTokenizer; "
-          "m = AutoModelForSequenceClassification.from_pretrained('./wuc-model-v2'); "
-          "t = AutoTokenizer.from_pretrained('./wuc-model-v2'); "
-          "m.push_to_hub('jonday/wuc-model'); t.push_to_hub('jonday/wuc-model')\"")
+    print("\nDo NOT push these weights to Hugging Face or any public host.")
+    print("They are trained on CUI maintenance records. The legacy")
+    print("jonday/wuc-model repo was deleted 2026-07-31; this script used to")
+    print("print copy-paste instructions to republish to it. See CLAUDE.md,")
+    print("'Sensitivity & deployment policy'.")
+    print(f"\nTo deploy: export WUC_MODEL_PATH={OUT_DIR}")
 
 
 if __name__ == "__main__":

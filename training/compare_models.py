@@ -27,8 +27,17 @@ import torch
 from sklearn.metrics import accuracy_score, f1_score
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-OLD_MODEL = "jonday/wuc-model"
-NEW_MODEL = "./wuc-model-hier"
+# jonday/wuc-model (the original BERT-base) was deleted from Hugging Face
+# 2026-07-31 and could not be scored meaningfully anyway: its config carried
+# only HF's placeholder LABEL_0..LABEL_1726 in id2label, so every prediction
+# mapped to a string that could never match a real WUC and it scored 0.0000
+# by construction while reporting ~99% confidence.
+#
+# The comparison that actually matters is the two local ModernBERT variants:
+# wuc-model-v2 (flat, from train_fresh.py) vs wuc-model-hier (joint
+# system/subsystem/WUC, deployed). Both carry real id2label maps.
+OLD_MODEL = os.environ.get("WUC_OLD_MODEL", "./wuc-model-v2")
+NEW_MODEL = os.environ.get("WUC_MODEL_PATH", "./wuc-model-hier")
 TEST_PATH = Path("data_splits/test.parquet")
 SAMPLE_SIZE = 2000     # subset for speed; set to None for full test set
 MAX_LEN = 128

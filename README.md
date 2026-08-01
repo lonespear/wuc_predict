@@ -186,7 +186,7 @@ wuc_predict/
 
 | Model | Architecture | Test acc | Macro F1 | Test loss | Status |
 |---|---|---|---|---|---|
-| Original `jonday/wuc-model` | bert-base-uncased | — | — | — | legacy (pre-CUI-policy) |
+| Original `jonday/wuc-model` | bert-base-uncased | — | — | — | **deleted from HF 2026-07-31** — superseded, and its config carried only placeholder `LABEL_N` in `id2label` |
 | `wuc-model-v2 (flat)` | ModernBERT-large | 0.904 | 0.772 | 1.035 | superseded |
 | `wuc-model-v2-extended (10 ep)` | ModernBERT-large + 5 more epochs | 0.906 | 0.771 | 1.290 | superseded — overfit |
 | `wuc-model-hier (hierarchical)` | ModernBERT-large + aux system/subsystem heads | **0.903** | **0.772** | **0.555** | 🚀 deployed |
@@ -334,8 +334,9 @@ https://<jupyterhub-host>/user/<user>/proxy/8501/
 
 | Env var | Purpose | Default |
 |---|---|---|
-| `WUC_MODEL_PATH` | Path/repo of the classifier checkpoint | `jonday/wuc-model` (legacy) |
-| `WUC_DATA_PATH` | Override path to `FinalData.csv` | `./FinalData.csv` then `../kc135/kc_135.csv` |
+| `WUC_MODEL_PATH` | Path of the classifier checkpoint | **REQUIRED — import raises without it.** No default: the old fallback silently loaded a different label space. |
+| `WUC_DATA_PATH` | Override path to the records CSV | `./app_data.csv`, then `./FinalData.csv`, then `../kc135/kc_135.csv` |
+| `WUC_OLD_MODEL` | Baseline checkpoint for `training/compare_models.py` | `./wuc-model-v2` |
 | `ANTHROPIC_API_KEY` | Enables `ClaudeAdapter` in Tab 3 | (unset → adapter hidden) |
 | `USE_TF` | Set to `0` to skip TensorFlow auto-import in `transformers` | `0` (recommended) |
 
