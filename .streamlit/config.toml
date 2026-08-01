@@ -1,0 +1,21 @@
+# App chrome. Chart colors live in viz_theme.py and must stay in step with
+# these — surfaces here, encoding there.
+#
+# Values are the validated reference palette's dark instance: page plane
+# #0d0d0d, chart surface #1a1a19, primary ink #ffffff, blue slot-1 #3987e5.
+
+[theme]
+base = "dark"
+primaryColor = "#3987e5"
+backgroundColor = "#0d0d0d"
+secondaryBackgroundColor = "#1a1a19"
+textColor = "#ffffff"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false

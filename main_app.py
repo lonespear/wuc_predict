@@ -11,10 +11,14 @@ import os
 import pandas as pd
 import streamlit as st
 
+import viz_theme
+
 from data_config import resolve_data_path, resolve_lookup_path
 from sum_utils import parse_user_query, analyze_results, describe_filters
 from wuc_profile import build_profile
 from llm_adapter import available_adapters
+
+viz_theme.register()
 
 st.set_page_config(page_title="KC-135 Maintenance Analytics", page_icon="✈️", layout="wide")
 
@@ -158,7 +162,7 @@ def _hbar(data: dict, value_name: str, label_name: str, label_limit: int = 60):
         alt.Chart(d)
         .mark_bar()
         .encode(
-            x=alt.X(f"{value_name}:Q", title=value_name),
+            x=alt.X(f"{value_name}:Q", axis=viz_theme.count_axis(value_name)),
             y=alt.Y(f"{label_name}:N", sort="-x", title=None),
             tooltip=[label_name, value_name],
         )
@@ -176,7 +180,8 @@ def _bar(data: dict, value_name: str, label_name: str, keep_order: bool = True):
     return (
         alt.Chart(d)
         .mark_bar()
-        .encode(x=enc_x, y=alt.Y(f"{value_name}:Q", title=value_name), tooltip=[label_name, value_name])
+        .encode(x=enc_x, y=alt.Y(f"{value_name}:Q", axis=viz_theme.count_axis(value_name)),
+                 tooltip=[label_name, value_name])
         .properties(height=240)
     )
 
@@ -426,11 +431,35 @@ with tab_profile:
             st.divider()
             st.subheader("Supporting Breakdowns")
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total records", f"{profile['total_records']:,}")
-            m2.metric("Affected airframes", profile["affected_tails"])
-            if profile["date_range"]:
-                m3.metric("Date range", f"{profile['date_range'][0][:7]} → {profile['date_range'][1][:7]}")
+            # BLUF: the numbers a fleet manager acts on. Record count alone
+            # cannot distinguish "frequent but trivial" from "rare but costly",
+            # so burden leads alongside it.
+            _lab = profile.get("labor") or {}
+            _tr = profile.get("trend") or {}
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Records", f"{profile['total_records']:,}",
+                      help=f"across {profile['affected_tails']} airframes"
+                           + (f", {profile['date_range'][0][:7]} → "
+                              f"{profile['date_range'][1][:7]}"
+                              if profile["date_range"] else ""))
+            if _lab.get("total_man_hours") is not None:
+                m2.metric("Man-hours", f"{_lab['total_man_hours']:,.0f}",
+                          help=f"{_lab.get('mean_hours_per_event', 0):.1f} h per event "
+                               f"vs {_lab.get('fleet_mean_hours_per_event', 0):.1f} h "
+                               f"fleet average")
+                _bi = _lab.get("burden_index")
+                if _bi is not None:
+                    _verdict = ("expensive per event" if _bi >= 1.25
+                                else "cheap per event" if _bi <= 0.8
+                                else "typical per event")
+                    m3.metric("Cost per event", f"{_bi:.2f}× fleet", help=_verdict)
+            if _tr.get("direction"):
+                m4.metric("Trend", _tr["direction"].title(),
+                          delta=f"{_tr.get('change_pct', 0):+.0f}%",
+                          delta_color="inverse",
+                          help=f"{_tr['first_full_year']}–{_tr['last_full_year']}"
+                               + (f"; {_tr['excluded_partial_year']} partial, excluded"
+                                  if _tr.get("excluded_partial_year") else ""))
 
             # When — calendar heatmap up top (subsumes both old bar charts), then
             # the seasonality + year bars side by side underneath.
@@ -439,15 +468,10 @@ with tab_profile:
                 st.markdown("**When — records per month (darker = more)**")
                 st.altair_chart(hm, use_container_width=True)
 
-            c_when, c_year = st.columns(2)
-            with c_when:
-                if profile["month_histogram"]:
-                    st.markdown("**Seasonality (month-of-year, all years)**")
-                    st.altair_chart(_bar(profile["month_histogram"], "Records", "Month"), use_container_width=True)
-            with c_year:
-                if profile["year_histogram"]:
-                    st.markdown("**Year-over-year**")
-                    st.altair_chart(_bar(profile["year_histogram"], "Records", "Year"), use_container_width=True)
+            # Seasonality and year-over-year bar charts removed: the calendar
+            # heatmap above encodes both axes already, and the Trend metric in
+            # the BLUF row states the direction outright. Three charts answering
+            # one question is what made this page read as a wall of visuals.
 
             st.markdown("**Where**")
             wmap = _world_map(profile.get("base_geo", []))
@@ -465,7 +489,18 @@ with tab_profile:
                     "No bases could be geolocated for this WUC. Base names in the data: "
                     + ", ".join(list(profile["base_distribution"].keys()))
                 )
-            if profile["base_distribution"]:
+            # Raw counts rank the busiest bases first for EVERY wuc, which said
+            # nothing and directly contradicted a narrative that had already
+            # corrected for volume. This plots observed vs expected instead.
+            _conc = viz_theme.concentration_chart(profile.get("base_concentration") or {})
+            if _conc is not None:
+                st.markdown("**Concentration — records vs. what each base's "
+                            "overall maintenance volume predicts**")
+                st.altair_chart(_conc, use_container_width=True)
+                st.caption("1.0× = exactly what that base's workload predicts. "
+                           "Above ~1.5× is a genuine hotspot; a tall raw count at "
+                           "1.0× just means a busy base.")
+            elif profile["base_distribution"]:
                 st.altair_chart(_hbar(profile["base_distribution"], "Records", "Base"), use_container_width=True)
 
             c_life, c_phase = st.columns(2)
@@ -497,8 +532,14 @@ with tab_profile:
                         st.markdown(f"- *{phrase[:200]}* ({count})")
 
             if profile["cooccurring_wucs"]:
+                # A bar chart of counts 1-3 was rendering ~60 fractional axis
+                # ticks to encode three integers. Not a chart.
                 st.markdown("**Frequently opened alongside (same job control number)**")
-                st.altair_chart(_hbar(profile["cooccurring_wucs"], "Times co-occurring", "WUC"), use_container_width=True)
+                st.markdown("  ".join(
+                    f"`{w}` ×{c}" for w, c in
+                    sorted(profile["cooccurring_wucs"].items(),
+                           key=lambda kv: kv[1], reverse=True)[:8]
+                ))
 
             with st.expander("Raw profile JSON (for debugging / export)"):
                 st.json(profile, expanded=False)
