@@ -39,7 +39,10 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 OLD_MODEL = os.environ.get("WUC_OLD_MODEL", "./wuc-model-v2")
 NEW_MODEL = os.environ.get("WUC_MODEL_PATH", "./wuc-model-hier")
 TEST_PATH = Path("data_splits/test.parquet")
-SAMPLE_SIZE = 2000     # subset for speed; set to None for full test set
+# Subset for speed. 2,000 rows cannot separate two models a few tenths of a
+# point apart — set WUC_COMPARE_N=0 for the full test set before drawing any
+# conclusion about which model is better.
+SAMPLE_SIZE = int(os.environ.get("WUC_COMPARE_N", "2000")) or None
 MAX_LEN = 128
 BATCH = 64
 

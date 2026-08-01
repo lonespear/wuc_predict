@@ -128,9 +128,30 @@ config, not your Python.
 | `wuc-model-v2-extended` (10 ep) | 0.906 | 0.771 | 1.290 | superseded (overfit) |
 | **`wuc-model-hier`** | **0.903** | **0.772** | **0.555** | **🚀 deployed** |
 
-Tied on macro F1, but hierarchical has 47% lower test loss → much better
-calibrated. That calibration win is what makes the top-3 + confidence-band UX
-honest.
+**The "better calibrated" justification does not survive re-measurement.**
+It was formed under the pooling bug. First apples-to-apples run of
+`compare_models.py` (2,000 held-out rows, both models correctly pooled,
+2026-07-31):
+
+| | accuracy | macro F1 |
+|---|---|---|
+| `wuc-model-v2` (flat) | 0.9125 | 0.8085 |
+| `wuc-model-hier` (deployed) | 0.9080 | 0.8071 |
+
+Calibration is mixed, not a win: v2 is better in the 0.85-0.95 band
+(0.895 vs 0.836), hier marginally better at the top and bottom.
+
+**But the difference is noise.** Of 83 disagreements, exactly one model was
+right in 67; v2 took 38, hier 29. Coin-flip expectation is 33.5 each — about
+one standard error out. These two models are statistically indistinguishable
+on 2,000 rows.
+
+**Do not switch models on this.** `wuc-model-hier` is deployed and validated
+end-to-end at 0.9162 held-out; swapping for a difference inside the noise
+band would mean re-validating everything for no measurable gain. Run
+`WUC_COMPARE_N=0 python training/compare_models.py` on the full 15,636 rows
+if you want the question actually settled — and only act if the gap survives
+at that sample size.
 
 ---
 

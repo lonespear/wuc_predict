@@ -317,6 +317,48 @@ warranted" (a legitimate and likely outcome), or one retrain. Not two.
 
 ---
 
+## Phase 4 — Make it answer "so what?"  ← *opened 2026-07-31*
+
+**Why this is not creep, when "UI polish" is in Killed below.** That entry was
+written when the tabs were rendering empty sections and the real problem was
+data. The complaint now is different: the tabs are full of real content that
+reads as *"a bunch of run-on visuals and summary tables."* That is an
+information-architecture finding, not gold-plating.
+
+**The framework is not the problem.** Streamlit already survives the four
+constraints that matter — JupyterHub reverse proxy, no sudo, CUI so nothing
+leaves the box, no CDN reachability (see the topojson fight in `8c3b78c`).
+Dash, NiceGUI and Reflex all look better out of the box and would each mean
+re-litigating proxy paths and asset loading, to arrive at the same run-on
+layout in a different framework. **Do not port.**
+
+**The model is not the problem either.** `gemma4:e4b` reads fine; it has
+nothing to reason *with*. The profile hands it counts and no basis for
+judging whether 171 records is a lot. Asked for a "so what", any model of any
+size can only reword the counts.
+
+Ordered so each step makes the next worth doing:
+
+| # | Task | Why it comes first |
+|---|---|---|
+| 4.1 | **Enrichment.** `Labor` (man-hours) and `Stop Date − Start Date` (aircraft downtime) are already in the extracts and completely unused. Add burden and downtime totals, plus fleet-relative rates: is this WUC's frequency high *for its system*, is a base an outlier or just large? | Turns "appears 171 times" into "costs N man-hours and M aircraft-days, concentrated at two bases" — the only thing that makes a "so what" possible |
+| 4.2 | **Prompt rework** against the enriched profile. Revisit the sectioned `ANALYST_PROMPT` reverted in `c42cd87` — it was reverted for saying "insufficient data" when the fields genuinely were absent. | Needs 4.1 to have anything to say |
+| 4.3 | **Visual pass.** Kill redundant charts (calendar heatmap + month bars + year bars all answer "when" — keep the heatmap). BLUF card of 3 numbers at the top. `st.container(border=True)` for hierarchy. Sub-tabs inside Tab 3 (Why / When / Where / Lifecycle) to end the scroll. One registered Altair theme — which also fixes the 60-tick axis problem globally. Dark theme via `.streamlit/config.toml`. | Worth doing once there is something worth displaying |
+| 4.4 | **Optional: bigger local model.** An RTX 6000 Ada with 48 GB is running a 9.6 GB model. `gemma3:27b` or `qwen3:32b` at Q4 fits alongside the BERT model. One `ollama pull`, fully local, no CUI implication. | Cheapest quality step, but 4.1 matters more |
+
+**Non-goals for Phase 4** — write these down before starting:
+
+- No framework port.
+- No new tabs. Three is right.
+- No chart that does not answer a question a maintainer would actually ask.
+- Not a retrain. Phase 2 declined that and nothing here changes it.
+
+**Exit criteria:** Tab 3 opens with three numbers that matter, the narrative
+cites burden and downtime rather than counts alone, and the page fits a
+screen without scrolling to find the point.
+
+---
+
 ## Parked — not now, with the trigger that would un-park
 
 These are good ideas. That's exactly why they're dangerous right now.
