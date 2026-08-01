@@ -403,6 +403,36 @@ screen without scrolling to find the point.
 
 ---
 
+## Phase 5 — Maintenance Precedent Assistant  📋 SCOPED AS A CADET PROJECT
+
+Not work for this repo's maintainer. Written up as a two-semester cadet
+research project: **`docs/CADET_PROJECT_AY2627.md`**.
+
+The idea: a junior maintainer facing an unfamiliar write-up gets *"has this
+happened before, and what fixed it?"* answered from 162,565 historical
+records, anchored to the WUC taxonomy in TO 1C-135-06.
+
+**Two findings that shaped the scope, both from checking rather than assuming:**
+
+1. **TO 1C-135-06 is the Work Unit Code Manual** — the parts taxonomy. It
+   contains no fault isolation, no diagnostic procedures, no repair steps.
+   Those are in the `-2` series, which is not in hand.
+2. **A WUC hierarchy is not a decision tree.** Knowing `45175` sits under
+   hydraulics says where a part lives, not what to check first. Shipping
+   taxonomy navigation as troubleshooting would mislead exactly the user the
+   tool is for.
+
+So the deliverable is **precedent and context**, not diagnosis — which the
+data does support, and which is closer to what an experienced maintainer
+actually carries in their head.
+
+The interesting research question is the one this project already hit and
+could not close: **how do you evaluate retrieval quality when subject-matter
+expert time is the binding constraint?** Phase 1's accuracy figure is
+defensible but not hand-verified for exactly that reason.
+
+---
+
 ## Parked — not now, with the trigger that would un-park
 
 These are good ideas. That's exactly why they're dangerous right now.
