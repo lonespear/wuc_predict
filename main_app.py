@@ -447,16 +447,15 @@ with tab_profile:
         else:
             adapter = adapters[adapter_names.index(adapter_choice)]
 
+            # The narrative is claimed here but WRITTEN at the end of this
+            # block. Nothing below depends on the LLM — the profile is pure
+            # pandas — so blocking the entire tab on a token stream meant a
+            # slow model looked like a broken page. A 31B at ~37s used to hide
+            # every chart for 37s; now the breakdowns paint immediately and the
+            # prose fills in above them.
             st.subheader("Narrative Summary")
             placeholder = st.empty()
-            if hasattr(adapter, "summarize_stream"):
-                narrative = ""
-                for chunk in adapter.summarize_stream(profile):
-                    narrative += chunk
-                    placeholder.markdown(narrative)
-            else:
-                narrative = adapter.summarize(profile)
-                placeholder.markdown(narrative)
+            placeholder.caption(f"Generating with {adapter.name}…")
 
             st.divider()
             st.subheader("Supporting Breakdowns")
@@ -574,3 +573,20 @@ with tab_profile:
 
             with st.expander("Raw profile JSON (for debugging / export)"):
                 st.json(profile, expanded=False)
+
+            # Everything above is rendered. Only now do we wait on the model,
+            # streaming into the placeholder reserved at the top of the tab.
+            try:
+                if hasattr(adapter, "summarize_stream"):
+                    narrative = ""
+                    for chunk in adapter.summarize_stream(profile):
+                        narrative += chunk
+                        placeholder.markdown(narrative)
+                else:
+                    placeholder.markdown(adapter.summarize(profile))
+            except Exception as exc:  # a dead daemon must not blank the tab
+                placeholder.warning(
+                    f"Narrative unavailable from {adapter.name}: {exc}. "
+                    f"The breakdowns below are unaffected — they are computed "
+                    f"from the data, not the model."
+                )
