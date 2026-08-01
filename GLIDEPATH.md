@@ -409,13 +409,26 @@ These are good ideas. That's exactly why they're dangerous right now.
 
 | Item | Un-park when |
 |---|---|
-| **Chart axis tick density** — the co-occurrence and Base bar charts render every 0.05 increment on small integer ranges, producing ~60 tick labels. One-line Altair fix (`tickMinStep=1`, `format='d'`). | Doing any other Tab 3 work — fold it in then, not before |
-| **Reconsider the sectioned `ANALYST_PROMPT`** reverted in `c42cd87` | It was reverted because Gemma kept writing "insufficient data" — which was true at the time. The data now exists, so the sectioned version may be strictly better. Revisit when Phase 1 is closed |
-| **Discrepancy-only model variant** (pre-fix live prediction) | Someone actually asks for pre-fix prediction. This is a **second model with its own training run, its own eval, and UI routing logic** — it is a v2 project, not a follow-up. Biggest single creep risk on the list. |
-| Prompt-style selector, Tab 3 (brief/engineering/executive) | A reader complains about the current narrative style |
-| Recommendations section in the analyst prompt | Same |
-| CSV batch prediction *in the Tab 1 UI* | `batch_predict.py` (1.1) proves insufficient — the script covers the actual need |
+| **Discrepancy-only model variant** (pre-fix live prediction) | Someone actually asks for pre-fix prediction. A **second model with its own training run, its own eval, and UI routing logic** — a v2 project, not a follow-up. Still the biggest single creep risk on this list. |
+| **Sub-tabs inside Tab 3** (Why / When / Where / Lifecycle) | The page still reads long after Phase 4.3 deleted two charts and collapsed the co-occurrence list. Look before building — sub-tabs trade scrolling for clicking, which is not automatically a win. |
+| Prompt-style selector, Tab 3 (brief / engineering / executive) | A reader complains about the current narrative style |
+| CSV batch prediction *in the Tab 1 UI* | `training/batch_predict.py` proves insufficient — the script covers the actual need |
 | Verify `kc135_wuc_lookup_levels.csv` vs committed dictionary | The dictionary fallback visibly fails on a real code |
+| Retrain on merged/relabelled WUC pairs | Data owners ship a corrected extract, or coverage becomes a stated requirement and `MIN_PER_CLASS` must drop. Not for accuracy chasing — see Phase 2. |
+
+### Cleared 2026-07-31 — parked items that resolved
+
+- **Chart axis tick density** — done in Phase 4.3. Its trigger ("doing any
+  other Tab 3 work") fired, and it was folded in as designed.
+- **Recommendations section in the analyst prompt** — was already present in
+  `ANALYST_PROMPT`. Never actually pending; parked in error.
+- **Reconsider the sectioned `ANALYST_PROMPT`** (`c42cd87`) — trigger fired
+  when Phase 1 closed, and the answer is **no**. The sectioned version existed
+  to force coverage of fields that were empty because of the data bug fixed in
+  Phase 0. With real data, `gemma4:31b` produces correct flowing narrative
+  unprompted, including the volume-vs-concentration distinction. Reintroducing
+  rigid sections would only bring back "insufficient data" boilerplate.
+  **Closed, not parked.**
 
 ---
 
@@ -425,7 +438,16 @@ These are good ideas. That's exactly why they're dangerous right now.
 |---|---|
 | `ClaudeAdapter` default model bump | Default deployment is local Gemma. Dead code path on the box. |
 | Streamlit Community Cloud | Not viable — CUI, no Ollama, 1 GB ceiling. Settled. |
-| Any further UI polish | Tabs 1-3 all work. Polish is the creep. |
+| Framework port (Dash / NiceGUI / Reflex) | Streamlit is the only option already surviving the reverse proxy, no-sudo, CUI and no-CDN constraints. A port buys the same layout in a new framework. |
+| fp16/bf16 for the classifier | Saving is imperceptible on single-string inference; perturbing logits would invalidate the 0.9162 held-out figure. See Phase 4. |
+| Aircraft-downtime metrics | `Stop Date` equals `Start Date` on 99.3% of records. The signal does not exist in this data. See the Phase 4 column audit. |
+
+> **Note:** "Any further UI polish" was listed here and is **removed**. It was
+> written when the tabs rendered empty sections and the real problem was data.
+> Once they filled with real content, "this is hard to read" became a
+> legitimate finding — which is what Phase 4.3 addressed. The rule it was
+> protecting still holds: polish *instead of* correctness is creep; polish
+> *after* correctness is the work.
 
 ---
 
