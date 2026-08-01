@@ -336,10 +336,43 @@ class GemmaAdapter:
             yield chunk["message"]["content"]
 
 
+def _ollama_models() -> list[str]:
+    """Every model the local Ollama daemon has, newest API shape or old."""
+    try:
+        import ollama
+        data = ollama.list()
+    except Exception:
+        return []
+    raw = getattr(data, "models", None)
+    if raw is None and isinstance(data, dict):
+        raw = data.get("models", [])
+    names: list[str] = []
+    for m in raw or []:
+        name = (getattr(m, "model", None) or getattr(m, "name", None)
+                or (m.get("model") or m.get("name") if isinstance(m, dict) else None))
+        if name:
+            names.append(str(name))
+    return sorted(set(names))
+
+
 def available_adapters() -> list[SummaryAdapter]:
-    candidates: list[SummaryAdapter] = [
-        NullAdapter(),
-        GemmaAdapter(),
-        ClaudeAdapter(),
-    ]
+    """NullAdapter first (instant, no GPU), then one entry per local model.
+
+    Enumerating rather than hardcoding means `ollama pull` is enough to make a
+    model selectable — no restart, no code change — and lets a big model be
+    compared against a small one side by side instead of swapped in and out.
+    """
+    candidates: list[SummaryAdapter] = [NullAdapter()]
+
+    names = _ollama_models()
+    pinned = os.environ.get("WUC_OLLAMA_MODEL")
+    if pinned:
+        # Pinned model leads the list; still selectable if not yet pulled.
+        names = [pinned] + [n for n in names if n != pinned]
+    if names:
+        candidates += [GemmaAdapter(model=n) for n in names]
+    else:
+        candidates.append(GemmaAdapter())  # daemon down: keep one entry
+
+    candidates.append(ClaudeAdapter())
     return [a for a in candidates if a.available()]
