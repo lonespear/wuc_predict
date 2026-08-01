@@ -317,7 +317,33 @@ warranted" (a legitimate and likely outcome), or one retrain. Not two.
 
 ---
 
-## Phase 4 — Make it answer "so what?"  ← *opened 2026-07-31*
+## Phase 4 — Make it answer "so what?"  ✅ CLOSED 2026-07-31
+
+| # | Outcome |
+|---|---|
+| 4.1 | ✅ `labor` (burden index), `base_concentration`, `trend` in the profile |
+| 4.2 | ✅ prompt + offline template lead with burden, use concentration not raw counts |
+| 4.3 | ✅ dark theme, one registered Altair theme, redundant charts deleted, tick density fixed, map and bar chart reconciled with the narrative |
+| 4.4 | ✅ **`gemma4:31b` selected.** Every local Ollama model is now a dropdown option |
+| 4.5 | ✅ breakdowns render before the model is called |
+
+**Model decision, on evidence.** Same WUC, same profile, both local:
+
+- `gemma4:e4b` (4 s) opened with *"the maintenance burden … is disproportionately **high**"* — a factual inversion of burden index 0.3 — then contradicted itself, and expanded base names into `"Pittsburgh ANGB, PA"` etc. that appear nowhere in the data.
+- `gemma4:31b` (37 s warm) led correctly with *"frequent … low maintenance burden"*, cited `<11,901 hrs` exactly where e4b rounded, invented nothing, and drew the distinction the whole phase was built for: *"While McConnell has the most raw records, the problem is genuinely concentrated at Birmingham, Pittsburgh and Mitchell."*
+
+Its own cold run had hallucinated co-occurring WUCs `12C11`/`12C12`. **Size reduced fabrication; it did not eliminate it.** Treat narrative specifics as unverified.
+
+**Latency stopped being a tradeoff** once 4.5 landed: 37 s of generation costs nothing when the charts are already on screen. Pin the model with `OLLAMA_KEEP_ALIVE=-1 OLLAMA_FLASH_ATTENTION=1` on `ollama serve` and the cold start is once per boot.
+
+### Declined: fp16/bf16 for the classifier
+
+Proposed as a speed win, then dropped. BERT inference on one short string is already ~10 ms — the saving is invisible — and changing precision perturbs logits, which would invalidate the **0.9162 held-out figure Phase 1 spent a day establishing**. Not worth re-running the evaluation to save nothing a user can perceive.
+
+---
+
+<details>
+<summary>Original Phase 4 plan</summary>
 
 **Why this is not creep, when "UI polish" is in Killed below.** That entry was
 written when the tabs were rendering empty sections and the real problem was
@@ -372,6 +398,8 @@ measures — which need no new columns, only comparison against the fleet.
 **Exit criteria:** Tab 3 opens with three numbers that matter, the narrative
 cites burden and downtime rather than counts alone, and the page fits a
 screen without scrolling to find the point.
+
+</details>
 
 ---
 
