@@ -114,6 +114,122 @@ def _year_histogram(df: pd.DataFrame) -> dict[int, int]:
     return {}
 
 
+def _labor_stats(subset: pd.DataFrame, full_df: pd.DataFrame) -> dict[str, Any]:
+    """Maintenance burden in man-hours, and how it compares to the fleet.
+
+    `Labor` is man-hours per maintenance action (median 2.0, IQR 1-5 across
+    162,565 records, no nulls). Raw counts answer "how often"; this answers
+    "how much work", which is the question a maintenance manager actually has.
+
+    burden_index is the key number: share of fleet labor divided by share of
+    fleet records. Above 1.0 means each occurrence of this WUC costs more than
+    an average maintenance action — a code that is rare but expensive scores
+    high, and one that is common but trivial scores low.
+
+    NOTE: aircraft downtime is deliberately absent. Stop Date equals Start
+    Date on 99.3% of records, so this dataset cannot support a down-time
+    claim. See GLIDEPATH.md Phase 4 column audit.
+    """
+    if "Labor" not in subset.columns or "Labor" not in full_df.columns:
+        return {}
+    lab = pd.to_numeric(subset["Labor"], errors="coerce").dropna()
+    fleet = pd.to_numeric(full_df["Labor"], errors="coerce").dropna()
+    if lab.empty or fleet.empty:
+        return {}
+
+    total = float(lab.sum())
+    fleet_total = float(fleet.sum())
+    out: dict[str, Any] = {
+        "total_man_hours": round(total, 1),
+        "mean_hours_per_event": round(float(lab.mean()), 2),
+        "median_hours_per_event": round(float(lab.median()), 2),
+        "max_hours_single_event": round(float(lab.max()), 1),
+        "fleet_mean_hours_per_event": round(float(fleet.mean()), 2),
+    }
+    if fleet_total > 0 and len(fleet):
+        labor_share = total / fleet_total
+        record_share = len(lab) / len(fleet)
+        out["share_of_fleet_labor_pct"] = round(100.0 * labor_share, 3)
+        out["share_of_fleet_records_pct"] = round(100.0 * record_share, 3)
+        if record_share > 0:
+            out["burden_index"] = round(labor_share / record_share, 2)
+    return out
+
+
+def _base_concentration(subset: pd.DataFrame, full_df: pd.DataFrame,
+                        top_n: int = 8) -> dict[str, Any]:
+    """Which bases are genuine outliers, rather than merely large.
+
+    Raw base counts always rank the biggest bases first, which says nothing.
+    This compares observed records against what the base's overall share of
+    fleet maintenance would predict. index > 1.5 means the problem really is
+    concentrated there; index near 1.0 means the base just does more of
+    everything.
+    """
+    if "Base" not in subset.columns or "Base" not in full_df.columns:
+        return {}
+    sub = subset["Base"].astype(str).str.strip().str.title().value_counts()
+    fleet = full_df["Base"].astype(str).str.strip().str.title().value_counts()
+    n_sub, n_fleet = int(sub.sum()), int(fleet.sum())
+    if not n_sub or not n_fleet:
+        return {}
+
+    out: dict[str, Any] = {}
+    for base, count in sub.head(top_n).items():
+        expected = n_sub * (int(fleet.get(base, 0)) / n_fleet)
+        if expected <= 0:
+            continue
+        out[base] = {
+            "records": int(count),
+            "expected_if_typical": round(expected, 1),
+            "index": round(count / expected, 2),
+        }
+    return out
+
+
+def _trend(year_histogram: dict, date_range: tuple | None) -> dict[str, Any]:
+    """Direction and size of the year-over-year trend.
+
+    Excludes the final year when the data ends before December — the extracts
+    run to 2026-03-31, so counting 2026 against full years would manufacture a
+    collapse that is really just a partial year.
+    """
+    if not year_histogram or len(year_histogram) < 3:
+        return {}
+    years = sorted(int(y) for y in year_histogram)
+    counts = {int(y): int(c) for y, c in year_histogram.items()}
+
+    partial = None
+    if date_range:
+        try:
+            last = pd.to_datetime(date_range[1])
+            if last.year == years[-1] and (last.month, last.day) != (12, 31):
+                partial = years[-1]
+                years = years[:-1]
+        except (ValueError, TypeError):
+            pass
+    if len(years) < 3:
+        return {}
+
+    half = len(years) // 2
+    early = sum(counts[y] for y in years[:half])
+    late = sum(counts[y] for y in years[-half:])
+    out: dict[str, Any] = {
+        "first_full_year": years[0],
+        "last_full_year": years[-1],
+        "earlier_period_records": early,
+        "recent_period_records": late,
+    }
+    if early > 0:
+        change = 100.0 * (late - early) / early
+        out["change_pct"] = round(change, 1)
+        out["direction"] = ("rising" if change > 15 else
+                            "falling" if change < -15 else "steady")
+    if partial:
+        out["excluded_partial_year"] = partial
+    return out
+
+
 def _phase_from_code(series: pd.Series, code_map: dict[str, str]) -> dict[str, int]:
     if series.empty:
         return {}
@@ -172,6 +288,9 @@ def build_profile(
         "maint_type_phase": {},
         "cooccurring_wucs": {},
         "affected_tails": 0,
+        "labor": {},
+        "base_concentration": {},
+        "trend": {},
     }
 
     if subset.empty:
@@ -217,6 +336,13 @@ def build_profile(
     profile["month_histogram"] = _month_histogram(subset)
 
     profile["year_histogram"] = _year_histogram(subset)
+
+    # Phase 4.1 — burden and relative measures. Counts say how often;
+    # these say how much it costs, whether it is growing, and where it is
+    # genuinely concentrated rather than merely where the big bases are.
+    profile["labor"] = _labor_stats(subset, df)
+    profile["base_concentration"] = _base_concentration(subset, df)
+    profile["trend"] = _trend(profile["year_histogram"], profile["date_range"])
 
     # Year x month matrix for a calendar heatmap (records: {year, month, count}).
     if "Start Date" in subset.columns:

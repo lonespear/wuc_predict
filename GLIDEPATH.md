@@ -341,10 +341,26 @@ Ordered so each step makes the next worth doing:
 
 | # | Task | Why it comes first |
 |---|---|---|
-| 4.1 | **Enrichment.** `Labor` (man-hours) and `Stop Date − Start Date` (aircraft downtime) are already in the extracts and completely unused. Add burden and downtime totals, plus fleet-relative rates: is this WUC's frequency high *for its system*, is a base an outlier or just large? | Turns "appears 171 times" into "costs N man-hours and M aircraft-days, concentrated at two bases" — the only thing that makes a "so what" possible |
+| 4.1 | **Enrichment.** See the column audit below — scope narrowed after checking. `Labor` (man-hours) plus fleet-relative comparisons. | Turns "appears 171 times" into "costs N man-hours, 2.3× the fleet rate per event, over-represented at McConnell" |
 | 4.2 | **Prompt rework** against the enriched profile. Revisit the sectioned `ANALYST_PROMPT` reverted in `c42cd87` — it was reverted for saying "insufficient data" when the fields genuinely were absent. | Needs 4.1 to have anything to say |
 | 4.3 | **Visual pass.** Kill redundant charts (calendar heatmap + month bars + year bars all answer "when" — keep the heatmap). BLUF card of 3 numbers at the top. `st.container(border=True)` for hierarchy. Sub-tabs inside Tab 3 (Why / When / Where / Lifecycle) to end the scroll. One registered Altair theme — which also fixes the 60-tick axis problem globally. Dark theme via `.streamlit/config.toml`. | Worth doing once there is something worth displaying |
 | 4.4 | **Optional: bigger local model.** An RTX 6000 Ada with 48 GB is running a 9.6 GB model. `gemma3:27b` or `qwen3:32b` at Q4 fits alongside the BERT model. One `ollama pull`, fully local, no CUI implication. | Cheapest quality step, but 4.1 matters more |
+
+### Column audit, 2026-07-31 — two enrichment inputs are dead
+
+Checked before building, after today's lesson about unverified column
+assumptions. On all 162,565 records:
+
+| Column | Verdict |
+|---|---|
+| **`Labor`** | ✅ **USE.** float64, zero nulls, median 2.0 h, mean 4.40, IQR 1–5, max 90. Man-hours per maintenance action, clean. |
+| `Stop Date − Start Date` | ❌ **DEAD. Do not re-attempt.** 161,438 of 162,565 (99.3%) are exactly zero days; max is 1. Stop and Start are the same calendar day for essentially every record. These are day-granularity job records, not down-time tracking. There is no aircraft-downtime signal in this data. |
+| `How Mal Class` | ❌ **DEAD.** 162,564 records are `1`, one is `16`. Constant. |
+| `Units Produced` | ⚠️ Marginal. Mean 1.03, median 1, one outlier at 4,514. Not worth a multiplier. |
+
+So "aircraft-days down" is **not** a claim this dataset can support, and the
+tool must not imply otherwise. The remaining levers are labor and *relative*
+measures — which need no new columns, only comparison against the fleet.
 
 **Non-goals for Phase 4** — write these down before starting:
 

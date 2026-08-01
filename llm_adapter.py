@@ -22,19 +22,41 @@ ANALYST_PROMPT = (
     "  - what this WUC is (`wuc`, `description`) and its scale "
     "(`total_records`, `affected_tails`, `date_range`), with the single biggest "
     "takeaway up front;\n"
+    "  - MAINTENANCE BURDEN from `labor` — lead with `total_man_hours`, not "
+    "the record count. `burden_index` compares this WUC's share of fleet "
+    "labor to its share of fleet records: above 1.0 means each occurrence "
+    "costs more than an average maintenance action, below 1.0 means it is "
+    "cheap per event. Say plainly whether this code is expensive or merely "
+    "frequent, using `mean_hours_per_event` against "
+    "`fleet_mean_hours_per_event`. A rare, expensive code deserves more "
+    "attention than a common trivial one;\n"
+    "  - the direction of travel from `trend` — `direction` and `change_pct` "
+    "compare earlier to recent full years. If `excluded_partial_year` is "
+    "present, the final year is incomplete and was left out; do not treat it "
+    "as a decline;\n"
     "  - why it happens — the dominant failure mode from `top_discrepancy_phrases` "
     "/ `top_discrepancy_keywords` (quote a representative write-up verbatim with "
     "its count; if one mode dominates, give its share of the total) and the "
     "typical fix from `top_corrective_actions` / `top_corrective_keywords`;\n"
     "  - when — seasonality from `month_histogram` and the year-over-year trend "
     "from `year_histogram` (compare earliest vs. latest years with the numbers);\n"
-    "  - where — the top bases from `base_distribution` and whether the problem "
-    "is fleet-wide or concentrated;\n"
+    "  - where — use `base_concentration`, NOT raw `base_distribution` counts. "
+    "Each entry has `records`, `expected_if_typical` (what that base's overall "
+    "share of fleet maintenance would predict) and `index`. An index near 1.0 "
+    "means the base is simply busy; above ~1.5 means the problem is genuinely "
+    "concentrated there and is worth naming. Do not call a base a hotspot just "
+    "because it has the most records;\n"
     "  - lifecycle and discovery — airframe-age skew from `flight_hour_buckets` "
     "and how these are caught from `when_discovered_phase` / `maint_type_phase`;\n"
     "  - related work from `cooccurring_wucs` and what it implies;\n"
     "  - close with 2-3 prioritized recommended actions, each tied to a specific "
-    "number from the profile.\n\n"
+    "number from the profile. Justify priority by man-hours and burden_index "
+    "rather than record count — that is what makes a recommendation worth "
+    "acting on.\n\n"
+    "Do NOT claim anything about aircraft downtime, non-mission-capable time, "
+    "or how long jets were grounded. This dataset records same-day job entries "
+    "and contains no downtime signal whatsoever. Labor hours are the only cost "
+    "measure available.\n\n"
     "Style: confident, readable prose. Use whatever the profile gives you and "
     "simply move past anything it doesn't — never write 'insufficient data', "
     "'not available', or call out gaps; just write about what's there. Use ONLY "
@@ -89,6 +111,42 @@ class NullAdapter:
                if profile["date_range"] else ".")
         )
         lines.append("")
+
+        # BURDEN — man-hours, not record count. A rare expensive code matters
+        # more than a common trivial one, and the count alone hides that.
+        lab = profile.get("labor") or {}
+        if lab.get("total_man_hours") is not None:
+            bits = [f"**Burden.** {lab['total_man_hours']:,.0f} man-hours total, "
+                    f"averaging {lab.get('mean_hours_per_event', 0):.1f} h per event "
+                    f"against a fleet average of "
+                    f"{lab.get('fleet_mean_hours_per_event', 0):.1f} h."]
+            bi = lab.get("burden_index")
+            if bi is not None:
+                if bi >= 1.25:
+                    bits.append(f"At {bi:.2f}x the fleet rate, each occurrence is "
+                                f"more expensive than a typical maintenance action.")
+                elif bi <= 0.8:
+                    bits.append(f"At {bi:.2f}x the fleet rate, this is cheap per "
+                                f"event — frequent rather than costly.")
+                else:
+                    bits.append(f"At {bi:.2f}x the fleet rate, cost per event is "
+                                f"about typical.")
+            lines.append(" ".join(bits))
+            lines.append("")
+
+        # TREND
+        tr = profile.get("trend") or {}
+        if tr.get("direction"):
+            msg = (f"**Direction.** {tr['direction'].title()} — "
+                   f"{tr['earlier_period_records']:,} records in "
+                   f"{tr['first_full_year']}-ward years vs "
+                   f"{tr['recent_period_records']:,} recently "
+                   f"({tr.get('change_pct', 0):+.0f}%).")
+            if tr.get("excluded_partial_year"):
+                msg += (f" {tr['excluded_partial_year']} is a partial year and "
+                        f"was excluded.")
+            lines.append(msg)
+            lines.append("")
 
         # WHY
         if profile["top_discrepancy_keywords"]:
