@@ -53,8 +53,8 @@ except FileNotFoundError as e:
     st.error(str(e))
     st.stop()
 
-tab_predict, tab_query, tab_profile = st.tabs(
-    ["🔮 Predict WUC", "🔎 Query Records", "📊 WUC Profile"]
+tab_predict, tab_query, tab_profile, tab_readme = st.tabs(
+    ["🔮 Predict WUC", "🔎 Query Records", "📊 WUC Profile", "📖 Read Me"]
 )
 
 # ---------------------------------------------------------------- Tab 1
@@ -590,3 +590,46 @@ with tab_profile:
                     f"The breakdowns below are unaffected — they are computed "
                     f"from the data, not the model."
                 )
+
+
+# ---------------------------------------------------------------- Tab 4
+# User-facing guide. Deliberately NOT the repo README, which is written for
+# whoever maintains the code — a maintainer needs to know what the burden and
+# concentration indices mean and what the tool cannot do, not the training
+# pipeline. Lives in docs/user_guide.md so it can be edited without touching
+# Python; the data facts below are computed live so they cannot drift.
+with tab_readme:
+    _guide = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "docs", "user_guide.md")
+    try:
+        with open(_guide, encoding="utf-8") as fh:
+            st.markdown(fh.read())
+    except OSError:
+        st.error(f"User guide not found at {_guide}")
+
+    st.divider()
+    st.subheader("This deployment")
+
+    g1, g2, g3 = st.columns(3)
+    g1.metric("Records loaded", f"{len(df):,}")
+    try:
+        _d = pd.to_datetime(df["Start Date"], errors="coerce").dropna()
+        if not _d.empty:
+            g2.metric("Coverage", f"{_d.min():%b %Y} – {_d.max():%b %Y}")
+    except Exception:
+        pass
+    if "Base" in df.columns:
+        g3.metric("Bases", f"{df['Base'].nunique():,}")
+
+    # `adapters` is set in the Profile tab above. Guard anyway — a failure
+    # there must not take out the help page, which is where someone lands when
+    # something else is broken.
+    try:
+        _engines = ", ".join(a.name for a in adapters)
+    except NameError:
+        _engines = "(unavailable)"
+    st.caption(
+        f"Source file `{resolve_data_path().name}` · classifier "
+        f"`{os.environ.get('WUC_MODEL_PATH', '(not set)')}` · "
+        f"summary engines: {_engines}"
+    )
