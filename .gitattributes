@@ -1,0 +1,8 @@
+# Shell scripts must keep LF endings. A .sh checked out with CRLF fails on
+# Linux with "bad interpreter: /usr/bin/env bash^M" — and this repo is edited
+# on Windows but only ever executed on the Linux GPU box.
+*.sh text eol=lf
+
+# Same reasoning for anything else the box executes or parses directly.
+*.py text eol=lf
+*.toml text eol=lf
