@@ -1,150 +1,151 @@
-## What this is
+## Purpose
 
-A tool for working with KC-135 maintenance records. It does three things:
-suggests a Work Unit Code for a completed maintenance action, answers questions
-about the record history, and profiles a single WUC — what drives it, when it
-happens, where, and what it costs.
+This tool assigns Work Unit Codes to completed maintenance actions and
+analyzes the KC-135 maintenance record history. It runs entirely on this
+server. No record leaves the machine.
 
-Everything runs locally. No record ever leaves this machine.
+Three capabilities: code assignment, record search, and single-code analysis.
 
 ---
 
-## 🔮 Predict WUC
+## Predict WUC — assign a code
 
-**Use it after the work is done.** Type the discrepancy and what you did to fix
-it, and the model suggests the WUC for the paperwork. It was trained on
-completed records, so the corrective action is a large part of what it reads.
+Enter the discrepancy and the corrective action. The tool returns three
+candidate Work Unit Codes with confidence percentages.
 
-It is **not** a pre-fix diagnostic. Given only a symptom, with no fix recorded
-yet, accuracy drops sharply — that is a different tool that does not exist yet.
+Write as the record is written: uppercase, terse, technical.
 
-**Write the way a maintenance record is written.** The model learned from
-terse, uppercase, technical write-ups:
+**Example**
 
-> ✅ `PILOT SEAT BELT FRAYED, MISSING STITCHING`
-> ❌ `the seatbelt looks kind of worn out`
-
-Both are understandable to a person. Only the first looks like the text the
-model was trained on.
-
-**Fill in the optional fields when you have them.** WCE Narrative, How Mal, and
-Action Taken were all part of training. Every one you add sharpens the answer.
-
-### Reading the confidence
-
-| Colour | Meaning |
+| Field | Entry |
 |---|---|
-| 🟢 **≥ 70%** | Right about 95% of the time. Use it. |
-| 🟡 **30–70%** | Check the alternatives before committing. |
-| 🔴 **< 30%** | Usually means the input does not look like a maintenance record. Re-read what you typed. |
+| Discrepancy | `PILOT SEAT BELT FRAYED, MISSING STITCHING` |
+| Corrective Action | `INSPECTED PILOT SEAT BELT, REPLACED IAW TM 1C-135-06` |
+| Result | **12AAN — FUSELAGE COMPARTMENTS / Safety Belt · 99.8%** |
 
-**Always look at the other two candidates.** The correct code is in the top
-three about 98% of the time, even when the top pick is wrong — and the
-runners-up are usually near-neighbours of the right answer (left versus right
-of the same component, or a general code versus a specific one).
+Add WCE Narrative, How Mal, and Action Taken when you have them. Each field
+raises accuracy.
 
----
+**Read the confidence**
 
-## 🔎 Query Records
-
-Ask in plain language. The parser understands tail numbers, bases, WUCs, date
-ranges, and seasons:
-
-- `all issues in 2024`
-- `WUC 12AAN at McConnell`
-- `tail 61-0313 last 6 months`
-- `hydraulic problems in winter`
-
-The filter it actually applied is echoed above the results, so you can see how
-your question was read. Results are downloadable as CSV, and any WUC in them
-can be sent straight to the Profile tab.
-
----
-
-## 📊 WUC Profile
-
-Everything here is computed from the records — no model, no guessing. The
-written summary at the top is generated; the numbers below it are not.
-
-Two figures are worth understanding, because they are not raw counts.
-
-### Cost per event (burden index)
-
-**How expensive one occurrence is, compared to an average maintenance action.**
-
-- **Above 1.0** — costs more labour per event than a typical job.
-- **Below 1.0** — cheap per event, however often it appears.
-
-This is the difference between a code that is *annoying* and one that is
-*expensive*. `12AAN` (safety belts) shows up 171 times but sits at **0.30×** —
-frequent and trivial. A code appearing 20 times at 4× deserves more attention.
-
-### Concentration (× expected)
-
-**Whether a base has more of this than its overall workload predicts.**
-
-A big base tops every raw count chart, which tells you nothing. This adjusts
-for that:
-
-- **Near 1.0×** — exactly what that base's volume predicts. Not a hotspot.
-- **Above ~1.5×** — genuinely concentrated there. Worth asking why.
-
-On `12AAN`, McConnell has the most raw records — and is unremarkable once
-adjusted. Birmingham, Pittsburgh, and Gen Mitchell are the real outliers.
-
-### The rest
-
-Seasonality and year-over-year in one calendar heatmap · airframe-age skew
-against fleet quartiles, where 25% per band is the "no pattern" result · how
-these get discovered · WUCs opened on the same job control number.
-
----
-
-## How good is it
-
-Measured on records the model had never seen, with all training data removed:
-
-| | |
+| Band | Action |
 |---|---|
-| Right first try | **91.6%** |
-| Correct code in the top three | **98.0%** |
-| Right system (2-char) | **98.3%** |
+| 🟢 70% and above | Correct 95% of the time. Enter it. |
+| 🟡 30 – 70% | Compare all three candidates before entering. |
+| 🔴 Below 30% | Re-check your entry against record format. |
 
-When it is wrong, it is usually close: **63%** of mistakes land in the correct
-subsystem — the wrong side of a pair, or a general code where a specific one
-was recorded. Only **1.7%** of records get placed in the wrong system entirely.
+Review all three candidates every time. The correct code appears in the top
+three 98% of the time. Candidates two and three are usually adjacent codes —
+opposite side of a component, or a specific code where a general one applies.
 
----
-
-## What it cannot do
-
-**It cannot suggest 6.8% of real WUCs.** Codes appearing fewer than five times
-in the source data were left out of training, so the model has no way to emit
-them. If nothing offered looks right, this may be why — trust the technical
-order, not the tool.
-
-**It has no downtime information.** Start and stop dates are the same day on
-99.3% of records, so nothing here can say how long an aircraft was down. Labour
-hours are the only cost measure available.
-
-**The accuracy above is measured against existing labels**, which came from the
-same quality-control process that produced the training data. It has not been
-independently verified by a maintainer. If those labels are sometimes wrong,
-the real accuracy is *higher* than stated — but that is unconfirmed.
-
-**The written summary is generated by a language model.** It occasionally
-states a number or a code that is not in the data. The tables and charts below
-it are computed directly and are reliable. When they disagree, believe the
-numbers.
-
-**The technical order is authoritative. This tool is not.**
+The tool reads the corrective action heavily. Enter both fields.
 
 ---
 
-## Where the data comes from
+## Query Records — search the history
 
-Two maintenance extracts, merged and de-duplicated. Roughly 38% of the combined
-rows were duplicates between them.
+Ask in plain language. The parser reads tail numbers, bases, Work Unit Codes,
+date ranges, and seasons.
 
-Questions, corrections, or a WUC that looks wrong:
+```
+all issues in 2024
+WUC 12AAN at McConnell
+tail 61-0313 last 6 months
+hydraulic problems in winter
+```
+
+The tool echoes the filter it applied above the results. Verify it matches
+your intent.
+
+Results export to CSV. Send any Work Unit Code from the results directly to
+the Profile tab.
+
+---
+
+## WUC Profile — analyze one code
+
+Enter a Work Unit Code. The tool returns maintenance burden, geographic
+concentration, trend, seasonality, airframe age distribution, discovery
+method, and associated codes.
+
+The charts and tables compute directly from the records. The written summary
+at the top is machine-generated. Where the two disagree, use the numbers.
+
+### Cost per event
+
+Labor hours per occurrence, measured against the fleet average of 4.4 hours.
+
+- **Above 1.0×** — costs more labor per occurrence than the average
+  maintenance action.
+- **Below 1.0×** — costs less.
+
+This separates expensive codes from merely frequent ones. WUC 12AAN appears
+171 times at 0.30× — high volume, low cost, low priority. A code appearing 20
+times at 4.0× consumes more of your maintenance capacity.
+
+### Concentration
+
+Records at a base, measured against that base's total maintenance volume.
+
+- **Near 1.0×** — matches what the base's workload predicts. Normal.
+- **Above 1.5×** — occurs more often than the base's volume accounts for.
+  Investigate.
+
+Large bases lead every raw count. This adjusts for size. On WUC 12AAN,
+McConnell records the most events and rates 1.0×. Birmingham, Pittsburgh, and
+Gen Mitchell each exceed 2.5×.
+
+### Remaining panels
+
+The calendar heat map shows month and year in one view. Airframe lifecycle
+compares against fleet quartiles — 25% per band means no age pattern.
+Discovery phase shows how these are found. Associated codes share a job
+control number.
+
+---
+
+## Accuracy
+
+Measured on 15,876 records the model had not seen, with all training data
+removed.
+
+| Measure | Result |
+|---|---|
+| Correct code, first candidate | **91.6%** |
+| Correct code, top three | **98.0%** |
+| Correct system (first two characters) | **98.3%** |
+
+Errors stay close to the answer. 63% land in the correct subsystem. 1.7% land
+in the wrong system.
+
+---
+
+## Coverage and confirmed limits
+
+**The model covers 1,251 codes — 93.2% of codes in current use.** Codes
+appearing fewer than five times in the source data were excluded from
+training. When no candidate fits, the code may be outside coverage. Use the
+technical order.
+
+**Labor hours are the only cost measure.** Start and stop dates match on 99.3%
+of records, so this data supports no downtime or NMC figure.
+
+**Accuracy is measured against existing record labels.** A maintainer has not
+independently verified them. If those labels contain errors, true accuracy is
+higher than stated.
+
+**The written summary comes from a language model and occasionally states a
+figure not present in the data.** The tables and charts do not.
+
+**TO 1C-135-06 is authoritative. This tool supports the record, not the
+repair.**
+
+---
+
+## Data
+
+Two maintenance extracts, merged and de-duplicated. 38% of combined rows
+appeared in both.
+
+Report errors or questions:
 [`github.com/lonespear/wuc_predict`](https://github.com/lonespear/wuc_predict)
