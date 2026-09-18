@@ -1,401 +1,255 @@
-# KC-135 WUC Maintenance Analytics
+# Validating an NLP Coding-Assist Model for KC-135 Maintenance Records
 
-A unified Streamlit platform for KC-135 maintenance analytics. Combines a
-fine-tuned text classifier (predict Work Unit Code from free text), a natural-
-language record query tool, and an LLM-narrated WUC profile.
+A fine-tuned text classifier that suggests the Work Unit Code (WUC) for a KC-135
+maintenance record from the maintainer's own free-text discrepancy and corrective
+action, delivered as a Streamlit tool, with the train-versus-serve verification that
+decides whether its numbers can be believed.
 
-> **Note on data sensitivity.** The training data is treated as CUI. The
-> dataset CSVs are gitignored and never committed; the trained model weights
-> are kept on internal infrastructure (not pushed to public model hubs).
+> **Data sensitivity.** The training records are treated as CUI. Dataset CSVs are
+> gitignored and never committed, and the trained weights stay on internal
+> infrastructure (not pushed to public model hubs). Every figure below is a summary
+> statistic; no record-level data appears in this repository.
 
 ---
 
-## What it does
+## Bottom line
 
-Three tabs in one Streamlit app, sharing a single dataframe and a single
-WUC→description map:
+Maintainers hand-code one of roughly 1,300 WUCs per record. Miscoded records flow
+straight into reliability and sustainment analysis, so a wrong code is not a clerical
+problem, it is a bad input to a readiness decision.
+
+The deployed model picks the QC-corrected code on **90.3%** of held-out records
+(95% CI 89.9–90.8, n = 15,636), and its top-3 list contains the right code **97.8%**
+of the time (97.6–98.0). Errors stay close to home: **98.3%** of records land in the
+correct system even when the exact code is wrong.
+
+The number to treat carefully is not the accuracy, it is the label. The model is
+measured against QC-corrected codes, not against subject-matter-expert adjudication,
+and no baseline has been measured yet for how often the maintainer's own typed code
+already matches QC. Until that baseline exists, this model's *value added* is
+unquantified even though its *accuracy* is measured.
+
+## Decision supported
+
+| Who | Decision | How the model is used |
+|---|---|---|
+| Maintainer | Which WUC to enter | Top-3 suggestions with a confidence band |
+| QC reviewer | Which records to re-check | Records in the low-confidence band route to review |
+| Data owner | Which code pairs to disambiguate | Recurring confusion pairs (e.g. `72LA0` ↔ `72VA0`) |
+| Analyst | Whether WUC-coded history can carry an analysis | Coverage and error structure reported separately |
+
+The tool never writes a code on its own. It proposes, and a person decides.
+
+---
+
+## Results
+
+Every figure below names the script that produces it. Those scripts read CUI data on
+authorized infrastructure, so their outputs are **not committed here**; rerun them on
+the authorized box to reproduce. Intervals are Wilson 95% intervals.
+
+### Primary: held-out test split
+
+`training/batch_predict.py` on `data_splits/test.parquet` (random stratified 80/10/10
+split, exact-duplicate text removed), n = 15,636:
+
+| Metric | Value | 95% CI |
+|---|---|---|
+| Top-1 accuracy | **0.903** | 0.899 – 0.908 |
+| Top-3 accuracy | **0.978** | 0.976 – 0.980 |
+
+### End-to-end, including records no model could code
+
+Across all 17,041 records in the app dataset (`training/build_app_data.py`):
+
+| Metric | Value | 95% CI | Note |
+|---|---|---|---|
+| Top-1 accuracy, all records | 0.854 | 0.848 – 0.859 | Includes records whose label is not in the class set |
+| Label coverage | 0.932 | 0.928 – 0.935 | 15,876 of 17,041 **records** are answerable |
+
+Coverage and accuracy are reported separately on purpose. A tool that quietly counts
+unanswerable records as correct, or drops them, tells you the wrong thing.
+
+### How wrong the errors are
+
+`training/error_analysis.py`, on the 15,876 answerable records:
+
+| Metric | Value | 95% CI |
+|---|---|---|
+| Correct system | 0.983 | 0.981 – 0.985 |
+| Correct subsystem | 0.969 | 0.966 – 0.971 |
+
+Of 1,330 errors: 62.8% land in the same subsystem, 17.0% in the same system but a
+different subsystem, and 20.2% cross systems (1.7% of all answerable records).
+
+### Does the confidence band mean anything?
+
+`training/batch_predict.py`, answerable records:
+
+| Band | n | Accuracy | 95% CI |
+|---|---|---|---|
+| ≥ 70% | 14,795 | 0.946 | 0.943 – 0.950 |
+| 30 – 70% | 980 | 0.525 | 0.493 – 0.556 |
+| < 30% | 101 | 0.307 | 0.225 – 0.403 |
+
+The bands separate cleanly, which is what the review-routing rule depends on. This is
+**not** a claim that a displayed "76%" equals 76% empirical accuracy; no reliability
+diagram or calibration error has been computed, and three bands are too coarse to
+support a point claim.
+
+### A second figure that is not yet reconciled
+
+A frequency-weighted run over the full record file, excluding exact train/validation
+text matches, gives top-1 0.916 (0.912–0.920) and top-3 0.980 (0.977–0.982),
+n = 15,876. Its interval does not overlap the test-split figure above. The likely
+cause is how that set is built rather than the model: repeated easy records count
+more than once, and texts appearing in training under a different label are dropped.
+**Until that is reconciled, 0.903 is the number to quote.**
+
+### Baselines: not yet measured
+
+No baseline is reported here, which is a gap, not an omission. Required before this
+work supports any claim of value added:
+
+1. How often the maintainer's originally typed WUC already matches the QC-corrected
+   code. This is the decision-relevant baseline and it runs on CPU against existing
+   data.
+2. TF-IDF + logistic regression, to show what the transformer buys.
+3. Majority class, as the floor.
+
+---
+
+## Verification and validation: the serving bug
+
+The most important result in this project is a bug, not a score.
+
+The model was trained with a custom forward pass that classifies from the CLS token.
+An early serving path pooled token embeddings by mean instead. Both configurations
+load, run, and return confident predictions. Re-measuring the model *as served*
+rather than as trained exposed the gap:
+
+| Pooling used at inference | Top-1 accuracy |
+|---|---|
+| Mean pooling (as served) | 0.756 |
+| CLS token (as trained) | 0.897 |
+
+Fourteen points of accuracy were disappearing silently. `training/check_pooling.py`
+now guards the configuration, and the result is why every number in this README is
+measured through the serving path.
+
+Two related checks are worth stating:
+
+- **Flat versus hierarchical model.** On 2,000 records the two models differ on 67
+  one-sided disagreements, 38 to 29. An exact sign test gives p ≈ 0.33, so the
+  models are statistically indistinguishable. The hierarchical model ships because it
+  was already validated end to end, not because it is better.
+- **A retracted claim.** An earlier version of this README argued the hierarchical
+  model was "significantly better calibrated" from a 47% lower test loss. That
+  comparison was invalid: the hierarchical loss is a weighted sum of three heads
+  (0.2 system + 0.3 subsystem + 0.5 WUC) and is not on the same scale as the flat
+  model's loss. The claim has been removed.
+
+---
+
+## Data
+
+| Stage | Records |
+|---|---|
+| Source maintenance records | 17,041 in the app dataset |
+| Answerable (label in class set, `MIN_PER_CLASS = 5`) | 15,876 |
+| Classes | 1,251 |
+
+The label is the QC `Corrected WUC` field. Input text is the discrepancy plus the
+corrective action, so the model describes a **post-fix** record; predicting from a
+discrepancy alone, before the fix is known, is a harder problem and a separate model.
+
+The data and weights are CUI and cannot be distributed with this repository.
+
+## Method
+
+ModernBERT-large, fine-tuned with class-weighted cross-entropy plus auxiliary system
+and subsystem heads (loss weights 0.2 / 0.3 / 0.5), max sequence length 128, 5 epochs,
+checkpoint selected on validation macro-F1, seed 42. Training runs about an hour on an
+RTX 6000 Ada (48 GB).
+
+---
+
+## Limitations
+
+- **Labels are QC-corrected, not SME-adjudicated.** The direction of any residual
+  label bias is unknown. Note that label noise can push measured accuracy in either
+  direction: an earlier claim that the accuracy figure is "a floor" was wrong and has
+  been removed.
+- **The split is random, not temporal.** There is no later-in-time holdout, so drift
+  in writing style is unmeasured.
+- **Near-duplicate leakage is not controlled.** Only exact text matches are removed,
+  so similar write-ups of the same job can appear in both train and test.
+- **Post-fix text only.** Accuracy would be materially lower on discrepancy-only input.
+- **6.8% of records are structurally unanswerable** with the current class set.
+- **Single seed.** No variance across seeds or folds is reported.
+- **The Tab 3 narrative is LLM-generated** and can fabricate specifics; the
+  deterministic profile above it is the authoritative part.
+- **No downtime or cost signal** exists in this data, so nothing here speaks to impact.
+
+---
+
+## The application
+
+Three Streamlit tabs over one dataframe and one WUC→description map:
 
 | Tab | What it does | Engine |
 |---|---|---|
-| 🔮 **Predict WUC** | Input a discrepancy + corrective action; get top-3 WUC predictions with confidence | Fine-tuned ModernBERT-large classifier (1,251 classes) |
-| 🔎 **Query Records** | Natural-language question over historical records; returns counts, monthly trend, top WUCs | Regex-parsed filters → pandas |
-| 📊 **WUC Profile** | Pick a WUC; get a deterministic profile (why / when / where / lifecycle / co-occurrence) plus an LLM-narrated summary | Pandas + pluggable LLM adapter (Gemma 4 / Claude / template) |
+| Predict WUC | Discrepancy + corrective action → top-3 WUCs with confidence band | Fine-tuned ModernBERT-large (1,251 classes) |
+| Query Records | Natural-language question → counts, monthly trend, top WUCs | Regex-parsed filters over pandas |
+| WUC Profile | One WUC → deterministic profile (why / when / where / lifecycle / co-occurrence) plus an LLM summary | pandas + pluggable LLM adapter |
 
----
-
-## Architecture
-
-### Top-level data flow
-
-```
-                ┌──────────────────────────────────────┐
-                │  Streamlit (main_app.py)             │
-                │  ┌────────────────────────────────┐  │
-                │  │ Shared state                   │  │
-                │  │  • df       (FinalData.csv)    │  │
-                │  │  • desc_map (WUC → description)│  │
-                │  └────────────────────────────────┘  │
-                │       │            │           │     │
-                │       ▼            ▼           ▼     │
-                │  ┌─────────┐  ┌─────────┐  ┌──────┐  │
-                │  │ Tab 1   │  │ Tab 2   │  │Tab 3 │  │
-                │  │ Predict │  │ Query   │  │ Prof.│  │
-                │  └────┬────┘  └────┬────┘  └──┬───┘  │
-                └───────┼────────────┼──────────┼──────┘
-                        │            │          │
-                        ▼            ▼          ▼
-              ┌──────────────┐ ┌──────────┐ ┌──────────┐
-              │model_loader  │ │sum_utils │ │wuc_profile│
-              │  ModernBERT  │ │  pandas  │ │  pandas   │
-              └──────────────┘ └──────────┘ └─────┬────┘
-                                                  │
-                                                  ▼
-                                          ┌────────────────┐
-                                          │ llm_adapter    │
-                                          │  Null / Gemma  │
-                                          │  Claude        │
-                                          └────────────────┘
-```
-
-### Tab 1 — Predict WUC
-
-```
-   user input ───► build_input_text(discrepancy, corrective_action)
-                          │
-                          ▼  "<discrepancy> [SEP] <corrective_action>"
-                   ┌──────────────────────────┐
-                   │ predict_top_k(text, k=3) │
-                   │  • tokenize              │
-                   │  • model.forward         │
-                   │  • softmax → top-k       │
-                   └──────────────┬───────────┘
-                                  │
-                                  ▼
-                   ┌──────────────────────────┐
-                   │ Confidence banding       │
-                   │  ≥70%   → green success  │
-                   │  30-70% → yellow warning │
-                   │   <30%  → red error      │
-                   └──────────────────────────┘
-```
-
-### Tab 3 — WUC Profile + LLM summary
-
-The full streaming pipeline from a structured profile dict to live-rendering
-narrative:
-
-```
-                                         ┌─────────────────────┐
-   user clicks "Build Profile" ─────────►│ wuc_profile.        │
-   in WUC Profile tab                    │ build_profile()     │
-                                         └──────────┬──────────┘
-                                                    │
-                                                    ▼
-                                         ┌─────────────────────┐
-                                         │ profile dict        │
-                                         │ {wuc, total, top_   │
-                                         │  phrases, hist…}    │
-                                         └──────────┬──────────┘
-                                                    │
-   user picks "Gemma 4 — gemma4:e4b…"               │
-   from adapter dropdown                            │
-                                                    ▼
-                                         ┌─────────────────────┐
-                                         │ adapter.summarize_  │
-                                         │   stream(profile)   │
-                                         └──────────┬──────────┘
-                                                    │
-                                          _build_prompt(profile)
-                                          = ANALYST_PROMPT + json.dumps(profile, indent=2)
-                                                    │
-                                                    ▼
-                                         ┌─────────────────────┐
-                                         │ ollama.chat(        │
-                                         │   model=…,          │
-                                         │   messages=[{user}],│
-                                         │   stream=True,      │
-                                         │   options={temp 0.3,│
-                                         │     num_ctx 8192})  │
-                                         └──────────┬──────────┘
-                                                    │
-   ┌────────────────── HTTP POST localhost:11434 ───┘
-   │  (local, not cloud — Ollama daemon)
-   ▼
-┌──────────────────────────┐
-│ Ollama daemon            │
-│  loads gemma4 GGUF       │
-│  → generates tokens      │
-│  → emits chunks          │
-└──────────┬───────────────┘
-           │   NDJSON stream:
-           │   {"message": {"content": "WUC "}}
-           │   {"message": {"content": "12AA0 "}}
-           │   {"message": {"content": "is the…"}}
-           ▼
-┌──────────────────────────┐
-│ summarize_stream yields  │ ───►  for chunk in adapter.summarize_stream(profile):
-│  each chunk["message"]   │           narrative += chunk
-│  ["content"]             │           placeholder.markdown(narrative)
-└──────────────────────────┘
-                                       (Streamlit re-renders the panel each iteration
-                                        → user sees text appearing live)
-```
-
----
-
-## Repo structure
-
-```
-wuc_predict/
-├── main_app.py              # Streamlit entry point — 3-tab unified app
-├── model_loader.py          # Loads classifier; exposes predict_discrepancy / predict_top_k
-├── wuc_profile.py           # Deterministic WUC profile builder (no ML)
-├── sum_utils.py             # NL query parser + record analysis
-├── llm_adapter.py           # SummaryAdapter Protocol + Null/Gemma/Claude implementations
-├── data_config.py           # Path resolution + WHEN_DISCOVERED / TYPE_MAINT code dicts
-│
-├── prepare_data.py          # Merge raw extracts → train/val/test parquet splits
-├── train_fresh.py           # Fresh fine-tune (single classifier head)
-├── train_continue.py        # Continue training from existing checkpoint
-├── train_hierarchical.py    # Joint system/subsystem/WUC fine-tune
-├── compare_models.py        # Head-to-head old vs new on test set with calibration
-│
-├── codes.json               # WUC → human-readable definition
-├── main_system.json         # 2-char prefix → main system name
-├── kc135_wuc_lookup_dictionary.csv  # WUC → description fallback lookup
-│
-├── requirements.txt
-├── CLAUDE.md                # Session-context notes
-└── README.md                # ← you are here
-
-# Gitignored — never committed
-├── FinalData.csv            # Maintenance records (CUI)
-├── new_data.csv             # Additional raw extract
-├── kc135_wuc_lookup_levels.csv
-├── data_splits/             # train.parquet / val.parquet / test.parquet
-├── wuc-model-v2/            # Trained ModernBERT-large checkpoint
-├── wuc-model-hier/          # Trained hierarchical checkpoint
-└── wuc-model-v2-extended/   # Continuation-training checkpoint
-```
-
----
-
-## Models
-
-### Classifier (Tab 1)
-
-| Model | Architecture | Test acc | Macro F1 | Test loss | Status |
-|---|---|---|---|---|---|
-| Original `jonday/wuc-model` | bert-base-uncased | — | — | — | **deleted from HF 2026-07-31** — superseded, and its config carried only placeholder `LABEL_N` in `id2label` |
-| `wuc-model-v2 (flat)` | ModernBERT-large | 0.904 | 0.772 | 1.035 | superseded |
-| `wuc-model-v2-extended (10 ep)` | ModernBERT-large + 5 more epochs | 0.906 | 0.771 | 1.290 | superseded — overfit |
-| `wuc-model-hier (hierarchical)` | ModernBERT-large + aux system/subsystem heads | **0.903** | **0.772** | **0.555** | 🚀 deployed |
-
-Macro F1 ties between flat and hierarchical, but **hierarchical has 47% lower
-test loss** (1.04 → 0.55) — significantly better calibrated, which matters for
-top-k display and confidence-threshold rejection.
-
-### Summarizer (Tab 3) — pluggable
-
-| Adapter | Backend | Network | Streaming | Notes |
-|---|---|---|---|---|
-| `NullAdapter` | Python templates | None | No | Always available; deterministic; enterprise-safe |
-| `GemmaAdapter` | Local Ollama (`gemma4:e4b` default) | `localhost:11434` | **Yes** | Default LLM. No data leaves the host. |
-| `ClaudeAdapter` | Anthropic API | Yes (api.anthropic.com) | No | Activates only if `ANTHROPIC_API_KEY` is set. Disabled by default. |
-
-Adding a new adapter = one class implementing the Protocol; no other file
-changes needed. See `llm_adapter.py` for the interface.
-
----
+LLM adapters are pluggable: `NullAdapter` (templates, no network), `GemmaAdapter`
+(local Ollama, nothing leaves the host, default), `ClaudeAdapter` (only if
+`ANTHROPIC_API_KEY` is set; off by default).
 
 ## Quick start
 
-### Local (development)
-
 ```bash
-git clone https://github.com/lonespear/wuc_predict.git
-cd wuc_predict
 pip install -r requirements.txt
 
-# Place your data file (gitignored — never committed). Run this FROM INSIDE the
-# wuc_predict directory; the trailing "." means "copy it here".
-cp /full/path/to/FinalData.csv .
-# — or, instead of copying, point the app at it without moving it:
-#   export WUC_DATA_PATH=/full/path/to/FinalData.csv
-# If FinalData.csv is already in the wuc_predict directory, skip this step entirely.
-# kc135_wuc_lookup_dictionary.csv already ships with the repo as the WUC-description fallback.
+# Point the app at the (gitignored, CUI) data file
+export WUC_DATA_PATH=/full/path/to/app_data.csv
 
-# Run
-streamlit run main_app.py
-# → http://localhost:8501
+streamlit run main_app.py     # http://localhost:8501
 ```
 
-### Production (USMA dockerized JupyterHub GPU box)
+`kc135_wuc_lookup_dictionary.csv` ships with the repo as the WUC-description fallback.
+Deployment on the internal JupyterHub GPU box is documented in `docs/`.
+
+### Reproducing the results
+
+On authorized infrastructure, with the CUI dataset in place:
 
 ```bash
-# 1. Install Ollama in user space (no sudo, no zstd CLI required)
-curl -L https://github.com/ollama/ollama/releases/download/v0.22.0/ollama-linux-amd64.tar.zst \
-  -o /tmp/ollama.tar.zst
-pip install --user zstandard
-python -c "import zstandard, tarfile; tarfile.open(fileobj=zstandard.ZstdDecompressor().stream_reader(open('/tmp/ollama.tar.zst','rb')), mode='r|').extractall('/home/jovyan/.local/'); print('ok')"
-echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
-
-# 2. Start Ollama daemon and pull the model
-nohup ollama serve > ~/ollama.log 2>&1 &
-sleep 3 && ollama pull gemma4:e4b
-
-# 3. Install Python deps
-pip install --user -r requirements.txt
-
-# 4. Launch Streamlit pointed at the local trained model
-WUC_MODEL_PATH=./wuc-model-hier nohup streamlit run main_app.py \
-  --server.port 8501 --server.address 0.0.0.0 \
-  --server.headless true --server.enableCORS false \
-  --server.enableXsrfProtection false --browser.gatherUsageStats false \
-  > ~/streamlit.log 2>&1 &
+python training/prepare_data.py        # splits, class filtering
+python training/train_hierarchical.py  # fine-tune (~60 min, RTX 6000 Ada)
+python training/check_pooling.py       # guard: CLS vs mean pooling
+python training/batch_predict.py       # accuracy, coverage, confidence bands
+python training/error_analysis.py      # system/subsystem error structure
 ```
 
-Access via JupyterHub proxy:
-```
-https://<jupyterhub-host>/user/<user>/proxy/8501/
-```
+`requirements.txt` is not yet pinned; pin it before treating a rerun as a replication.
 
 ---
 
-## Training pipeline
+## Next steps
 
-```
-                 raw_csv_a     raw_csv_b
-                     │             │
-                     └──────┬──────┘
-                            ▼
-                  ┌──────────────────┐
-                  │ prepare_data.py  │
-                  │  • schema reduce │
-                  │  • dedupe        │
-                  │  • [SEP] join    │
-                  │  • rare filter   │
-                  │  • 80/10/10      │
-                  └────────┬─────────┘
-                           ▼
-                  data_splits/
-                    train.parquet
-                    val.parquet
-                    test.parquet
-                    wuc_mapping.json
-                           │
-        ┌──────────────────┼──────────────────────┐
-        ▼                  ▼                      ▼
-  train_fresh.py    train_continue.py    train_hierarchical.py
-        │                  │                      │
-        ▼                  ▼                      ▼
-   wuc-model-v2/   wuc-model-v2-extended/  wuc-model-hier/
-                                                 │
-                                                 ▼
-                                       compare_models.py
-                                       (old vs new on test)
-```
+1. Measure the maintainer-typed-versus-QC baseline. Nothing else here means much
+   without it.
+2. Reconcile the 0.903 and 0.916 figures, or retire the second one.
+3. Hand-label about 100 recent live submissions and measure on those; that is the
+   number to trust for the live workflow.
+4. Add a temporal holdout and seed-variance reporting.
+5. Train and route a discrepancy-only variant for the pre-fix workflow.
+6. Commit non-CUI evidence artifacts (metric JSONs with counts only) for each headline
+   figure.
 
-| Script | Use case | Output |
-|---|---|---|
-| `prepare_data.py` | Merge raw extracts and produce splits | `data_splits/{train,val,test}.parquet` + `wuc_mapping.json` |
-| `train_fresh.py` | Fresh fine-tune from a SOTA base (default: ModernBERT-large) | `wuc-model-v2/` |
-| `train_continue.py` | Train N more epochs from an existing checkpoint with reset optimizer | `wuc-model-v2-extended/` |
-| `train_hierarchical.py` | Joint system/subsystem/WUC fine-tune; aux heads regularize the encoder | `wuc-model-hier/` |
-| `compare_models.py` | Head-to-head accuracy + calibration table on held-out test set | stdout report |
+## License and provenance
 
-### Data prep specifics
-
-- **Label hygiene** — `Corrected WUC` is treated as ground truth (raw `WUC` is
-  what the maintainer typed; corrected is QC-validated).
-- **Text construction** — `Discrepancy [SEP] Corrective Action [SEP] WCE
-  Narrative [SEP] How Mal [SEP] Action Taken`. Maintenance-report style
-  (uppercase, terse).
-- **Deduplication** — exact `(text, label)` duplicates removed (often eliminates
-  ~40% of rows when merging overlapping extracts).
-- **Rare-class filter** — classes with `< MIN_PER_CLASS=5` examples dropped.
-- **Stratified split** — first 80/20 stratified by `Corrected WUC`, then random
-  50/50 inside the 20% temp.
-
-### Training specifics
-
-- **Class-weighted CrossEntropyLoss** with inverse-frequency weights to handle
-  the heavy long tail (max class freq is ~190× median).
-- **fp16 mixed precision** — fits comfortably on a 48 GB RTX 6000 Ada.
-- **Best-checkpoint metric** — **macro F1** (treats all classes equally);
-  accuracy is reported but not optimized for.
-- **Hierarchical loss** (in `train_hierarchical.py`):
-  `0.20·L_system + 0.30·L_subsystem + 0.50·L_wuc`. Auxiliary heads operate on
-  the same pooled encoder representation; only the WUC head ships at inference.
-
----
-
-## Configuration
-
-| Env var | Purpose | Default |
-|---|---|---|
-| `WUC_MODEL_PATH` | Path of the classifier checkpoint | **REQUIRED — import raises without it.** No default: the old fallback silently loaded a different label space. |
-| `WUC_DATA_PATH` | Override path to the records CSV | `./app_data.csv`, then `./FinalData.csv`, then `../kc135/kc_135.csv` |
-| `WUC_OLD_MODEL` | Baseline checkpoint for `training/compare_models.py` | `./wuc-model-v2` |
-| `ANTHROPIC_API_KEY` | Enables `ClaudeAdapter` in Tab 3 | (unset → adapter hidden) |
-| `USE_TF` | Set to `0` to skip TensorFlow auto-import in `transformers` | `0` (recommended) |
-
----
-
-## Confidence band UX (Tab 1)
-
-The classifier's max-probability output is bucketed and rendered with intent:
-
-| Confidence | Display | Message |
-|---|---|---|
-| **≥ 70%** | 🟢 Green success | Trust the top-1 |
-| **30 – 70%** | 🟡 Yellow warning | Moderate — review alternatives |
-| **< 30%** | 🔴 Red error | Likely OOD input — treat top-1 as a guess; review all 3 candidates |
-
-This makes uncertainty visible. The hierarchical model's calibration ensures
-that "76%" actually correlates with ~76% empirical accuracy, not overconfidence.
-
----
-
-## Performance reference
-
-Training run on RTX 6000 Ada, 48 GB VRAM, 125k examples, 1,251 classes:
-
-| Model | Epochs | Wall time | Test acc | Test macro F1 | Test loss |
-|---|---|---|---|---|---|
-| `wuc-model-v2` (flat) | 5 | ~57 min | 0.904 | 0.772 | 1.035 |
-| `wuc-model-v2-extended` (10 total) | 5 more | ~57 min | 0.906 | 0.771 | 1.290 |
-| **`wuc-model-hier`** (hierarchical) | 5 | ~60 min | **0.903** | **0.772** | **0.555** |
-
-The flat model and hierarchical model tie on macro F1, but the hierarchical
-model is much better calibrated (~half the test loss). Continuation training
-beyond 5 epochs slightly hurt macro F1 — the dataset's signal is exhausted at
-5 epochs for this architecture.
-
----
-
-## Open follow-ups
-
-1. **Discrepancy-only model variant** — train on `["Discrepancy", "How Mal"]`
-   only for the live-prediction (pre-fix) workflow; expected ~0.55-0.65 macro
-   F1, honest baseline for that use case.
-2. **Tab 1 model routing** — automatically use `wuc-model-discrepancy` when
-   only the discrepancy is provided, `wuc-model-hier` when both fields are
-   available.
-3. **Confusion matrix / error analysis** — inspect where the model is wrong;
-   often clusters around adjacent WUCs in the same subsystem and reveals data
-   relabeling opportunities.
-4. **Production sample re-evaluation** — the held-out test set is sampled from
-   the same QC pipeline as training. Hand-label ~100 actual recent app
-   submissions and measure on those — that's the number to trust.
-5. **Distribution-drift monitoring** — periodic re-evaluation as text style
-   evolves; retrain quarterly or annually.
-6. **Prompt-style selector** in Tab 3 — three named templates (maintenance
-   brief / engineering analysis / executive summary) instead of one shared
-   `ANALYST_PROMPT`.
-
----
-
-## License
-
-(Internal — not yet licensed for external distribution.)
+Code: MIT (see `LICENSE`). Author: Jonathan Day. The data, labels, and trained weights
+are CUI and are not covered by that license; they are not distributed here.

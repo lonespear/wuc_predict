@@ -224,7 +224,9 @@ Top confusion pairs point at annotation convention rather than model failure:
   differs by one character in position 2 — likely a source data-entry
   transposition.
 
-**So 0.9162 is a floor.** A real slice of the gap is labeling convention.
+A real slice of the gap is labeling convention rather than model failure. That does
+not make 0.9162 a floor: because the model learned the same conventions, label noise
+can raise or lower the measured figure.
 
 ### The one open gap — stated, not papered over
 

@@ -122,7 +122,7 @@ in the wrong system.
 
 ## Coverage and confirmed limits
 
-**The model covers 1,251 codes — 93.2% of codes in current use.** Codes
+**The model covers 1,251 codes, which account for 93.2% of records in the source data.** Codes
 appearing fewer than five times in the source data were excluded from
 training. When no candidate fits, the code may be outside coverage. Use the
 technical order.
@@ -131,8 +131,9 @@ technical order.
 of records, so this data supports no downtime or NMC figure.
 
 **Accuracy is measured against existing record labels.** A maintainer has not
-independently verified them. If those labels contain errors, true accuracy is
-higher than stated.
+independently verified them. Label errors shift the measured accuracy in either
+direction: the model learned the same coding conventions, so it can agree with a
+mislabeled record as easily as it can be marked wrong on one.
 
 **The written summary comes from a language model and occasionally states a
 figure not present in the data.** The tables and charts do not.

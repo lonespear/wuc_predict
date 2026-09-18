@@ -166,7 +166,8 @@ Error character says the model is sound: only 1.7% of records are
 cross-system errors, and 62.8% of all mistakes are same-subsystem near
 misses. Several top confusion pairs are annotation convention, not model
 failure — `72LA0 ↔ 72VA0` is bidirectional, and rollup-vs-specific pairs
-like `624A0→62400` recur. **0.9162 is a floor.**
+like `624A0→62400` recur. That is annotation convention, not a guarantee that the
+true figure is higher; label noise cuts both ways.
 
 One gap remains open by design: `adjudication_worksheet.csv`, 25
 high-confidence disagreements needing ~30 minutes from a KC-135 maintainer.
