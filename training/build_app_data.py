@@ -15,9 +15,10 @@ cooccurring_wucs, when_discovered_phase, maint_type_phase. That is also why the
 Tab 3 map never drew bubbles (they key off `Base`) and why the sectioned
 analyst prompt kept reporting "insufficient data".
 
-The real extracts in `data/` have every one of those columns. This script
-merges them into `app_data.csv`, which `data_config.py` now prefers over
-`FinalData.csv`.
+The real extracts have every one of those columns. This script reads the
+combined corpus that `build_corpus.py` builds from them (one row per job, all
+extracts) and writes `app_data.csv`, which `data_config.py` prefers over
+`FinalData.csv`. Run `build_corpus.py` first.
 
 Training is unaffected — `prepare_data.py` still writes `data_splits/` for that.
 
@@ -25,6 +26,7 @@ Rollback: delete `app_data.csv`; `resolve_data_path()` falls back to
 `FinalData.csv` and you are exactly where you started.
 
 Usage:
+    python training/build_corpus.py      # once per new extract
     python training/build_app_data.py
 """
 from __future__ import annotations
@@ -35,8 +37,7 @@ from pathlib import Path
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PATH_A = REPO_ROOT / "data" / "data1.csv"
-PATH_B = REPO_ROOT / "data" / "data2.csv"
+DATA_DIR = REPO_ROOT / "data"
 OUT_PATH = REPO_ROOT / "app_data.csv"
 
 # Columns the WUC profile and Tab 2 reach for. Reported explicitly after the
@@ -96,6 +97,20 @@ def _parse_dates(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce")
 
 
+def find_corpus(data_dir: Path = DATA_DIR) -> Path:
+    """The newest combined corpus written by build_corpus.py.
+
+    Its name carries its date range (combined_2019-01_2026-07.csv), so a new
+    extract produces a new file; pick the one that ends latest.
+    """
+    found = [p for p in data_dir.glob("combined_*.csv")
+             if not p.stem.endswith("_superseded")]
+    if not found:
+        raise FileNotFoundError(
+            f"No combined_*.csv in {data_dir}. Run: python training/build_corpus.py")
+    return max(found, key=lambda p: p.stem.split("_")[-1])
+
+
 def _normalize(series: pd.Series) -> pd.Series:
     """Collapse trivial write-up variants so top-N phrase counts group properly.
 
@@ -113,33 +128,17 @@ def _normalize(series: pd.Series) -> pd.Series:
 
 
 def main() -> int:
-    for path in (PATH_A, PATH_B):
-        if not path.exists():
-            print(f"ERROR: missing {path}", file=sys.stderr)
-            return 1
+    try:
+        corpus_path = find_corpus()
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
 
-    df_a = pd.read_csv(PATH_A, low_memory=False)
-    df_b = pd.read_csv(PATH_B, low_memory=False)
-    print(f"A: {len(df_a):,} rows, {len(df_a.columns)} cols  ({PATH_A.name})")
-    print(f"B: {len(df_b):,} rows, {len(df_b.columns)} cols  ({PATH_B.name})")
-
-    # Same schema rule as prepare_data.py: reduce to the columns both share.
-    # data2 is a strict subset of data1, so this keeps all 21 of data2's
-    # columns and drops only data1's 10 derived extras (SYSTEM, NOUN, YEAR...).
-    common = [c for c in df_b.columns if c in df_a.columns]
-    dropped = sorted(set(df_a.columns) - set(common))
-    print(f"Common schema: {len(common)} cols")
-    print(f"Dropped from A: {dropped}")
-
-    merged = pd.concat([df_a[common], df_b[common]], ignore_index=True)
-    before = len(merged)
-
-    # Row-level exact dedup only. Deliberately NOT the (text, label) dedup
-    # prepare_data.py uses — Tab 2 and Tab 3 count maintenance records, and
-    # two distinct jobs can legitimately share identical write-up text.
-    merged = merged.drop_duplicates().reset_index(drop=True)
-    print(f"Merged: {before:,} rows -> {len(merged):,} after exact dedup "
-          f"({before - len(merged):,} removed)")
+    # build_corpus.py has already deduplicated to one row per job. Deliberately
+    # NOT the (text, label) dedup prepare_data.py uses — Tab 2 and Tab 3 count
+    # maintenance records, and two distinct jobs can share identical text.
+    merged = pd.read_csv(corpus_path, low_memory=False)
+    print(f"Corpus: {len(merged):,} rows, {len(merged.columns)} cols  ({corpus_path.name})")
 
     for src, dest in NORMALIZE_MAP.items():
         if src in merged.columns:

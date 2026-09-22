@@ -1,32 +1,44 @@
-"""Merge two raw KC-135 maintenance extracts into clean train/val/test splits
-for WUC prediction.
+"""Turn the combined KC-135 corpus into train/val/test splits for WUC prediction.
 
-Inputs (configurable below):
-    PATH_A — richer 30-col enriched extract (e.g. FinalData.csv)
-    PATH_B — leaner 21-col raw extract
+Input:
+    data/combined_*.csv — built by training/build_corpus.py (one row per job,
+    every extract merged). Run that first.
 
 Outputs (in ./data_splits/):
     train.parquet, val.parquet, test.parquet
+    temporal_holdout.parquet — every record on or after HOLDOUT_FROM, held back
+        from all three splits. It is newer than anything the model trains on,
+        so it measures whether the model holds up on future records.
     wuc_mapping.json  (label -> id, derived from train+val only)
 
 Run on the GPU box:
-    python prepare_data.py
+    python training/prepare_data.py
+
+Score the deployed model on the temporal holdout:
+    WUC_MODEL_PATH=./wuc-model-hier python training/batch_predict.py --input data_splits/temporal_holdout.parquet --text-col text
 """
 from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_app_data import find_corpus  # noqa: E402
+
 # =============================================================================
 # Config
 # =============================================================================
-PATH_A = "data/data1.csv"
-PATH_B = "data/data2.csv"            # rename to your second file
 OUT_DIR = Path("data_splits")
+# Records on/after this date never enter train/val/test. 2026-04-01 is the day
+# after the deployed model's training data ends, so the holdout is clean for it
+# too. Move it forward only deliberately — every model compared on the holdout
+# must have been trained without it.
+HOLDOUT_FROM = "2026-04-01"
 
 TEXT_FIELDS = [
     "Discrepancy",
@@ -43,20 +55,15 @@ SEED = 42
 # 1. Load
 # =============================================================================
 def main() -> None:
-    df_a = pd.read_csv(PATH_A, low_memory=False)
-    df_b = pd.read_csv(PATH_B, low_memory=False)
-    print(f"A: {len(df_a):,} rows, {len(df_a.columns)} cols")
-    print(f"B: {len(df_b):,} rows, {len(df_b.columns)} cols")
+    corpus_path = find_corpus()
+    df = pd.read_csv(corpus_path, low_memory=False)
+    print(f"Corpus: {len(df):,} rows, {len(df.columns)} cols  ({corpus_path.name})")
 
     # =========================================================================
-    # 2. Reduce A to B's schema (drop derived/enriched columns)
-    #    Those extras (YEAR, MONTH, SYSTEM, ...) are derivable from base fields
-    #    and including them risks leaking the label (SYSTEM is from WUC).
+    # 2. Only the text fields and the label are used below. The corpus's
+    #    lookup columns (SYSTEM, NOUN, ...) are derived from the WUC and would
+    #    leak the label — they are never model input.
     # =========================================================================
-    common = [c for c in df_b.columns if c in df_a.columns]
-    df = pd.concat([df_a[common], df_b[common]], ignore_index=True)
-    print(f"Common cols: {len(common)} | Combined: {len(df):,} rows")
-    print(f"Dropped from A: {sorted(set(df_a.columns) - set(common))}")
 
     # =========================================================================
     # 3. LABEL HYGIENE — Corrected WUC is QC-validated ground truth
@@ -83,6 +90,17 @@ def main() -> None:
     print(f"After text construction: {len(df):,} rows")
 
     # =========================================================================
+    # 4b. TEMPORAL HOLDOUT — split off BEFORE dedup and the rare-class filter,
+    #     so it keeps every future record, including WUCs the model cannot
+    #     emit (batch_predict reports those as unanswerable).
+    # =========================================================================
+    is_future = pd.to_datetime(df["Start Date"]) >= pd.Timestamp(HOLDOUT_FROM)
+    holdout_df = df[is_future].copy()
+    df = df[~is_future].copy()
+    print(f"Temporal holdout (Start Date >= {HOLDOUT_FROM}): {len(holdout_df):,} rows "
+          f"-> {len(df):,} left for train/val/test")
+
+    # =========================================================================
     # 5. DEDUPLICATION — exact (text, label) duplicates leak between splits
     # =========================================================================
     before = len(df)
@@ -97,7 +115,7 @@ def main() -> None:
     df = df[df["Corrected WUC"].isin(keep)].copy()
     print(f"After rare-class filter (min {MIN_PER_CLASS}): {len(df):,} rows | "
           f"{df['Corrected WUC'].nunique():,} classes")
-    print(f"Class freq → median: {counts.median():.0f}, "
+    print(f"Class freq -> median: {counts.median():.0f}, "
           f"mean: {counts.mean():.1f}, max: {counts.max()}")
 
     # =========================================================================
@@ -129,6 +147,7 @@ def main() -> None:
     train_df.to_parquet(OUT_DIR / "train.parquet", index=False)
     val_df.to_parquet(OUT_DIR / "val.parquet", index=False)
     test_df.to_parquet(OUT_DIR / "test.parquet", index=False)
+    holdout_df.to_parquet(OUT_DIR / "temporal_holdout.parquet", index=False)
     with open(OUT_DIR / "wuc_mapping.json", "w") as f:
         json.dump(wuc_to_id, f, indent=2)
     print(f"Saved to {OUT_DIR}/")
