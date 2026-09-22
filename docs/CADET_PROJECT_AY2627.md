@@ -12,7 +12,7 @@ described under *Reduced scope*.
 A junior KC-135 crew chief facing an unfamiliar write-up has two resources: a
 technical order that tells them what a part *is*, and an experienced maintainer
 who remembers what happened last time. The second one does not scale and
-retires. This project builds a tool that makes 162,565 historical maintenance
+retires. This project builds a tool that makes 163,145 historical maintenance
 records answer the question *"has this happened before, and what fixed it?"* —
 grounded in real corrective actions rather than generated advice, and anchored
 to the authoritative Work Unit Code taxonomy from TO 1C-135-06.
@@ -28,7 +28,7 @@ A deployed three-tab Streamlit platform on the school GPU box:
 | WUC classifier (ModernBERT-large, 1,251 classes) | **0.9162 top-1 / 0.9797 top-3** on 15,876 held-out records; 98.31% system-level |
 | Maintenance record query (Tab 2) | natural-language filters over the corpus |
 | WUC profile (Tab 3) | burden index, base concentration, trend, seasonality, lifecycle, co-occurrence |
-| Corpus | 162,565 records, 2019-01-01 → 2026-03-31, ~70 bases |
+| Corpus | 163,145 records (one per job), 2019-01-01 → 2026-07-31, 81 bases |
 | Local LLM | `gemma4:31b` via Ollama, fully offline |
 
 Read `CLAUDE.md` and `GLIDEPATH.md` in the repo root before writing any code.
@@ -262,6 +262,7 @@ starting from a blank file.
 ```bash
 # on the box
 cd ~/wuc_predict && git pull
+~/.venvs/wuc/bin/python training/build_corpus.py       # merge the raw extracts in data/
 ~/.venvs/wuc/bin/python training/build_app_data.py     # rebuild app_data.csv
 export WUC_MODEL_PATH=./wuc-model-hier
 ~/.venvs/wuc/bin/python training/error_analysis.py     # see how the model fails

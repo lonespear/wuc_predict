@@ -249,6 +249,37 @@ python training/error_analysis.py      # system/subsystem error structure
 6. Commit non-CUI evidence artifacts (metric JSONs with counts only) for each headline
    figure.
 
+### Data backlog (added 2026-09-22)
+
+A third extract (Feb 2025 – Jul 2026) arrived 2026-09-21. All raw data now lives in
+one master folder, OneDrive `Documents/kc135/data/`, and `training/build_corpus.py`
+merges it into one record per job: **163,145 records, 2019-01-01 → 2026-07-31**.
+
+- [x] Commit `training/build_corpus.py`.
+- [x] Point `build_app_data.py` and `prepare_data.py` at the combined corpus instead
+      of their own data1 + data2 merge.
+- [x] Check for train/test leakage from the old merge. About 6,000 jobs appeared in both
+      data1 and data2, about 1,700 of them under two different Corrected WUC labels.
+      **Result:** re-running the old split exactly (125,087 / 15,636 / 15,636) puts
+      264 test rows (1.7%) in the same job as a train/val row, and 259 of those carry
+      a *different* label than the training copy. That scores the model against the
+      label it was not taught, so the 0.903 test figure is, if anything, slightly
+      understated rather than inflated. The 0.9162 figure is unaffected:
+      `--exclude-seen` already dropped the 266 test rows whose input text appears in
+      train/val.
+- [x] Build the temporal holdout. `prepare_data.py` now holds back every record on or
+      after 2026-04-01, so 5,218 records (all of Apr–Jul 2026) go to
+      `data_splits/temporal_holdout.parquet`, newer than anything any model has
+      trained on.
+- [ ] Score the deployed model on the holdout (GPU box):
+      `WUC_MODEL_PATH=./wuc-model-hier python training/batch_predict.py --input data_splits/temporal_holdout.parquet --text-col text`
+- [ ] Write `docs/EVAL_METRICS.md` from the cadet's agreed metric set, then report the
+      holdout with it.
+- [ ] Retrain on the full corpus only after the holdout and metrics are fixed.
+- [x] Delete the duplicate raw copies outside `kc135/data/`, including the
+      Excel-corrupted `kc135/kc_135.csv`. They went to the Recycle Bin; the original
+      deliveries are kept in `kc135/data/originals/`.
+
 ## License and provenance
 
 Code: MIT (see `LICENSE`). Author: Jonathan Day. The data, labels, and trained weights

@@ -27,9 +27,33 @@ Currently running:
 - ModernBERT-large hierarchical fine-tune (`./wuc-model-hier`) for Tab 1
 - Gemma 4 (`gemma4:e4b`) via local Ollama for Tab 3
 - Streamlit pointed at `WUC_MODEL_PATH=./wuc-model-hier`
-- **Data: `app_data.csv`** (162,565 records, 2019-01-01 → 2026-03-31),
-  built by `training/build_app_data.py` from `data/data1.csv` +
-  `data/data2.csv`. NOT `FinalData.csv` — see below.
+- **Data: `app_data.csv`**, built by `training/build_app_data.py` from the
+  combined corpus. NOT `FinalData.csv` — see below. The box is still serving
+  the pre-2026-09-22 build (162,565 records to 2026-03-31) until it is rebuilt.
+
+### Data pipeline (changed 2026-09-22)
+
+Master copy of all raw data: OneDrive `Documents/kc135/data/` (its README has
+full provenance). Three extracts, named `data_<order received>_<coverage>`:
+`data_1_2019-01_2024-10.csv`, `data_2_2019-01_2026-03.csv`,
+`data_3_2025-02_2026-07.xlsx`, plus `reference/` WUC tables. On the box, copy
+those into `data/`, then run, in order:
+
+```bash
+~/.venvs/wuc/bin/python training/build_corpus.py && ~/.venvs/wuc/bin/python training/build_app_data.py && ~/.venvs/wuc/bin/python training/prepare_data.py
+```
+
+- `build_corpus.py` writes `data/combined_2019-01_2026-07.csv`: **163,145
+  records**, one per job (JCN + WCE ID + Tail). Where two extracts hold the same
+  job with different values, the newest extract wins; the older versions go to
+  `_superseded.csv`.
+- The old data1 + data2 merge really held ~156,675 distinct jobs, not 162,565.
+  About 6,000 jobs were in it twice, ~1,700 under two different labels.
+- `prepare_data.py` now holds back everything from `HOLDOUT_FROM = 2026-04-01`
+  on as `data_splits/temporal_holdout.parquet` (5,218 records). **Rerunning it
+  replaces the deployed model's `data_splits/`**, and the new test split is
+  not the one the 0.903 was measured on. Back up the old splits first if you
+  need to reproduce that figure.
 
 **Read `GLIDEPATH.md` for what to work on next.** It holds the finish line
 and, more importantly, the parked list with un-park triggers.
@@ -306,9 +330,10 @@ measure, not to write the explanation down.
 | `llm_adapter.py` | `SummaryAdapter` Protocol + `NullAdapter`/`GemmaAdapter`/`ClaudeAdapter`. Shared `ANALYST_PROMPT`. |
 | `sum_utils.py` | NL-query parser + record analysis (Tab 2). |
 | `data_config.py` | Path resolution + WHEN_DISCOVERED / TYPE_MAINT code dicts. |
-| `training/build_app_data.py` | **Builds `app_data.csv`** — merges the data/ extracts, parses Excel-serial dates, regenerates normalized text columns, reports profile-column coverage. |
+| `training/build_corpus.py` | **Builds the combined corpus** from the raw extracts: exact dedup, then one row per job with the newest extract winning. Writes `combined_*.csv`, `_superseded.csv` and a hash manifest. |
+| `training/build_app_data.py` | **Builds `app_data.csv`** from the combined corpus: parses dates, regenerates normalized text columns, reports profile-column coverage. |
 | `training/batch_predict.py` | Batched CUDA top-k inference. Bulk re-validation + `--worksheet N` writes the Phase 1 hand-labeling sheet. |
-| `training/prepare_data.py` | Merge raw extracts → train/val/test parquet splits. |
+| `training/prepare_data.py` | Combined corpus → train/val/test parquet splits, plus the temporal holdout (≥ 2026-04-01). |
 | `training/train_fresh.py` | Fresh fine-tune (single classifier head). |
 | `training/train_continue.py` | Continue from existing checkpoint with reset optimizer. |
 | `training/train_hierarchical.py` | Joint system/subsystem/WUC fine-tune; **produces the shipped model**. |
